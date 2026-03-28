@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Assets · TradeIntel{% endblock %}
+
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex align-items-baseline justify-content-between flex-wrap gap-2">
+    <h1 class="mb-3">
+      Assets
+      {% if is_paginated %}
+        <small class="text-muted ms-2">({{ page_obj.paginator.count }} total)</small>
+      {% endif %}
+    </h1>
+    {% if request.user.is_staff %}
+      <a class="btn btn-sm btn-outline-secondary" href="/admin/marketdata/asset/">Manage in Admin</a>
+    {% endif %}
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-12 col-md-4">
+      <input type="text" name="q" value="{{ request.GET.q }}" class="form-control" placeholder="Search by symbol or name">
+    </div>
+    <div class="col-6 col-md-3">
+      <select name="type" class="form-select">
+        <option value="">All Types</option>
+        <option value="CRYPTO" {% if request.GET.type == 'CRYPTO' %}selected{% endif %}>Crypto</option>
+        <option value="FOREX"  {% if request.GET.type == 'FOREX' %}selected{% endif %}>Forex</option>
+        <option value="INDEX"  {% if request.GET.type == 'INDEX' %}selected{% endif %}>Index</option>
+        <option value="STOCK"  {% if request.GET.type == 'STOCK' %}selected{% endif %}>Stock</option>
+        <option value="ETF"    {% if request.GET.type == 'ETF' %}selected{% endif %}>ETF</option>
+        <option value="FUTURE" {% if request.GET.type == 'FUTURE' %}selected{% endif %}>Future</option>
+        <option value="OTHER"  {% if request.GET.type == 'OTHER' %}selected{% endif %}>Other</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2 d-flex align-items-center">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="active" value="1" id="activeOnly"
+               {% if request.GET.active == '1' %}checked{% endif %}>
+        <label class="form-check-label" for="activeOnly">Active only</label>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <select name="page_size" class="form-select">
+        {% with ps=request.GET.page_size|default:'20' %}
+          <option value="20"  {% if ps == '20' %}selected{% endif %}>20 / page</option>
+          <option value="50"  {% if ps == '50' %}selected{% endif %}>50 / page</option>
+          <option value="100" {% if ps == '100' %}selected{% endif %}>100 / page</option>
+        {% endwith %}
+      </select>
+    </div>
+
+    <!-- Keep current order when applying filters -->
+    <input type="hidden" name="order" value="{{ request.GET.order }}">
+
+    <div class="col-6 col-md-1 d-grid">
+      <button class="btn btn-primary" type="submit">Apply</button>
+    </div>
+    <div class="col-6 col-md-1 d-grid">
+      <a class="btn btn-outline-secondary" href="{% url 'marketdata:asset_list' %}">Reset</a>
+    </div>
+  </form>
+
+  {% with q=request.GET.q t=request.GET.type a=request.GET.active ps=request.GET.page_size o=request.GET.order %}
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th>
+            <a class="text-decoration-none"
+               href="?order={% if o == 'symbol' %}-symbol{% elif o == '-symbol' %}symbol{% else %}symbol{% endif %}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}">
+              Symbol
+              {% if o == "symbol" %}▲{% elif o == "-symbol" %}▼{% endif %}
+            </a>
+          </th>
+          <th>
+            <a class="text-decoration-none"
+               href="?order={% if o == 'name' %}-name{% elif o == '-name' %}name{% else %}name{% endif %}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}">
+              Name
+              {% if o == "name" %}▲{% elif o == "-name" %}▼{% endif %}
+            </a>
+          </th>
+          <th>
+            <a class="text-decoration-none"
+               href="?order={% if o == 'asset_type' %}-asset_type{% elif o == '-asset_type' %}asset_type{% else %}asset_type{% endif %}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}">
+              Type
+              {% if o == "asset_type" %}▲{% elif o == "-asset_type" %}▼{% endif %}
+            </a>
+          </th>
+          <th>
+            <a class="text-decoration-none"
+               href="?order={% if o == 'exchange' %}-exchange{% elif o == '-exchange' %}exchange{% else %}exchange{% endif %}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}">
+              Exchange
+              {% if o == "exchange" %}▲{% elif o == "-exchange" %}▼{% endif %}
+            </a>
+          </th>
+          <th>
+            <a class="text-decoration-none"
+               href="?order={% if o == 'currency' %}-currency{% elif o == '-currency' %}currency{% else %}currency{% endif %}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}">
+              Currency
+              {% if o == "currency" %}▲{% elif o == "-currency" %}▼{% endif %}
+            </a>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in assets %}
+        <tr>
+          <td><a href="{% url 'marketdata:asset_detail' a.pk %}">{{ a.symbol }}</a></td>
+          <td>{{ a.name|default:"—" }}</td>
+          <td>{{ a.get_asset_type_display }}</td>
+          <td>{{ a.exchange|default:"—" }}</td>
+          <td>{{ a.currency|upper|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center text-muted">No assets yet. Try loading some with the management command.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if is_paginated %}
+  <nav aria-label="Assets pagination">
+    <ul class="pagination">
+      {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.previous_page_number }}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}&order={{ o|default:'symbol' }}">
+          Previous
+        </a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">Previous</span></li>
+      {% endif %}
+
+      <li class="page-item disabled">
+        <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      </li>
+
+      {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.next_page_number }}&q={{ q }}&type={{ t }}&active={{ a }}&page_size={{ ps }}&order={{ o|default:'symbol' }}">
+          Next
+        </a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">Next</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
+  {% endwith %}
+</div>
+{% endblock %}

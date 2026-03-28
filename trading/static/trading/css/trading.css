@@ -1,0 +1,7 @@
+/* Gradient cards & results (scoped to tools pages) */
+.gradient-card { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; text-align: left; }
+.result-card { background: rgba(255,255,255,.10); border-radius: .5rem; color: #fff; }
+
+/* Gradient button specific to tools */
+.btn-gradient { background: linear-gradient(135deg, #ff7e5f, #feb47b); border: none; color: #fff; transition: all .3s ease; }
+.btn-gradient:hover { opacity: .9; transform: scale(1.02); }

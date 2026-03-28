@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Trading Journal{% endblock %}
+
+{% block content %}
+<div class="text-center mb-5">
+  <h1 class="display-4 fw-bold">Welcome to Your Trading Journal</h1>
+  <p class="lead text-muted">
+    Upload your trading data, analyze performance, and generate professional reports.
+  </p>
+</div>
+
+<div class="row g-4">
+  <div class="col-md-4">
+    <div class="card feature-card h-100 text-center">
+      <div class="card-body">
+        <i class="bi bi-upload display-4 text-primary"></i>
+        <h5 class="card-title mt-3">Upload Your Trades</h5>
+        <p class="text-muted">Import CSV or Excel files to start analyzing.</p>
+        <a href="#" class="btn btn-primary w-100">
+          <i class="bi bi-upload"></i> Upload Data
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card feature-card h-100 text-center">
+      <div class="card-body">
+        <i class="bi bi-speedometer2 display-4 text-success"></i>
+        <h5 class="card-title mt-3">View Dashboard</h5>
+        <p class="text-muted">Explore KPIs, charts, and performance metrics.</p>
+        <a href="#" class="btn btn-success w-100">
+          <i class="bi bi-speedometer2"></i> Go to Dashboard
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card feature-card h-100 text-center">
+      <div class="card-body">
+        <i class="bi bi-file-earmark-arrow-down display-4 text-info"></i>
+        <h5 class="card-title mt-3">Download Reports</h5>
+        <p class="text-muted">Generate PDF, Excel, and CSV reports of your trades.</p>
+        <a href="#" class="btn btn-info w-100">
+          <i class="bi bi-download"></i> View Reports
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if user.is_staff %}
+<div class="mt-5">
+  <h3>Admin Tools</h3>
+  <p class="text-muted">Manage all user uploads and files.</p>
+  <a href="#" class="btn btn-warning">
+    <i class="bi bi-gear"></i> Admin File Management
+  </a>
+</div>
+{% endif %}
+{% endblock %}

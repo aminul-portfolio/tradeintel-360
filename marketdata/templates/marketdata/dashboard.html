@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid py-3" id="marketdata-dashboard">
+
+  <style>
+    /* ===== Dashboard layout helpers ===== */
+    .md-plot { width: 100%; }
+    .md-plot-line { height: 360px; }
+    .md-plot-candle { height: 420px; }
+    .card { overflow: hidden; } /* prevent inner canvas overlap */
+  </style>
+
+  <noscript>
+    <div class="alert alert-warning mb-3">This page requires JavaScript to display charts and live data.</div>
+  </noscript>
+
+  <!-- Title -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h3 fw-bold mb-0">Market Data Dashboard</h1>
+    <span class="badge bg-primary-subtle text-primary">
+      Updated: <span id="lastUpdated">—</span>
+    </span>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="small text-muted">Active Symbols</div>
+          <div class="display-6 fw-bold" id="kpiActiveSymbols">0</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="small text-muted">Open Trades</div>
+          <div class="display-6 fw-bold" id="kpiOpenTrades">0</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="small text-muted">Total Alerts</div>
+          <div class="display-6 fw-bold" id="kpiTotalAlerts">0</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="small text-muted">Refresh</div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="form-check form-switch m-0">
+              <input class="form-check-input" type="checkbox" id="autoRefreshToggle" checked>
+              <label class="form-check-label small" for="autoRefreshToggle">Auto (30s)</label>
+            </div>
+            <button id="btnRefreshNow" class="btn btn-sm btn-outline-primary">Refresh now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-md-3">
+          <label class="form-label">Symbol</label>
+          <input class="form-control" id="symbolInput" list="symbolList" placeholder="Type or pick a symbol">
+          <datalist id="symbolList"></datalist>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Timeframe</label>
+          <select id="timeframeSelect" class="form-select">
+            <option value="D1" selected>D1</option>
+            <option value="H1">H1</option>
+            <option value="M15">M15</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Preset</label>
+          <select id="presetSelect" class="form-select">
+            <option value="7d">Last 7D</option>
+            <option value="1m" selected>1M</option>
+            <option value="3m">3M</option>
+            <option value="ytd">YTD</option>
+            <option value="1y">1Y</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Start</label>
+          <input type="date" id="startDate" class="form-control" disabled>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">End</label>
+          <input type="date" id="endDate" class="form-control" disabled>
+        </div>
+        <div class="col-12 col-md-1 d-grid">
+          <button id="btnApply" class="btn btn-primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="mdTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-charts" data-bs-toggle="tab" data-bs-target="#pane-charts" type="button" role="tab">Charts</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-live" data-bs-toggle="tab" data-bs-target="#pane-live" type="button" role="tab">Live Prices</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-ohlc" data-bs-toggle="tab" data-bs-target="#pane-ohlc" type="button" role="tab">OHLC History</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- Charts -->
+    <div class="tab-pane fade show active" id="pane-charts" role="tabpanel">
+      <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-light fw-semibold">Line Price History</div>
+        <div class="card-body">
+          <div id="lineChart" class="md-plot md-plot-line"></div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-light fw-semibold">Candlestick (with Volume)</div>
+        <div class="card-body">
+          <div id="candleChart" class="md-plot md-plot-candle"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Prices -->
+    <div class="tab-pane fade" id="pane-live" role="tabpanel">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Live Price Table</span>
+          <div class="d-flex align-items-center gap-2">
+            <select id="filterSymbolLive" class="form-select form-select-sm" style="width:auto;min-width:180px;"></select>
+            <button id="btnTestSound" class="btn btn-sm btn-outline-secondary">Test Sound</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table id="liveTable" class="table table-sm table-striped align-middle">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Δ %</th>
+                  <th class="text-nowrap">Time (UTC)</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" class="text-muted small">Loading live prices…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OHLC -->
+    <div class="tab-pane fade" id="pane-ohlc" role="tabpanel">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Recent OHLC Candles</span>
+          <select id="filterSymbolOHLC" class="form-select form-select-sm" style="width:auto;min-width:180px;"></select>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table id="ohlcTable" class="table table-sm table-striped align-middle">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th>Time (UTC)</th>
+                  <th class="text-end">Open</th>
+                  <th class="text-end">High</th>
+                  <th class="text-end">Low</th>
+                  <th class="text-end">Close</th>
+                  <th class="text-end">Volume</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="8" class="text-muted small">Loading OHLC…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Sounds -->
+  <audio id="beepUp" src="{% static 'alerts/sounds/sound_up.mp3' %}"></audio>
+  <audio id="beepDown" src="{% static 'alerts/sounds/sound_down.mp3' %}"></audio>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <script src="{% static 'marketdata/js/dashboard.js' %}?v={% now 'U' %}"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (window.MarketDataDashboard?.init) {
+        window.MarketDataDashboard.init({
+          endpoints: {
+            prices: "/api/prices/",
+            line: "/api/line-price-data/",
+            ohlc: "/api/ohlc/",
+            trend: "/api/custom-trend/"
+          },
+          defaults: { symbol: "AAPL", timeframe: "D1", autoRefreshSec: 30 }
+        });
+      } else {
+        console.error("MarketDataDashboard.init not found—check that dashboard.js loaded.");
+      }
+    });
+  </script>
+{% endblock %}

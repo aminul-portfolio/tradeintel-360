@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My Profile | TradeIntel{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1 class="mb-4">My Profile</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} mb-3">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-md-4">
+      <div class="card p-3 text-center">
+        {% if request.user.userprofile.avatar %}
+          <img src="{{ request.user.userprofile.avatar.url }}" class="img-fluid rounded mb-3" alt="Avatar">
+        {% else %}
+          <div class="text-muted">No avatar uploaded</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-md-8">
+      <form method="post" enctype="multipart/form-data" class="card p-3">
+        {% csrf_token %}
+        <h5 class="mb-3">Account</h5>
+        <div class="row g-3">
+          <div class="col-md-6">{{ uform.first_name.label_tag }} {{ uform.first_name }}</div>
+          <div class="col-md-6">{{ uform.last_name.label_tag }} {{ uform.last_name }}</div>
+          <div class="col-md-12">{{ uform.email.label_tag }} {{ uform.email }}</div>
+        </div>
+
+        <hr class="my-4">
+
+        <h5 class="mb-3">Profile</h5>
+        <div class="row g-3">
+          <div class="col-md-6">{{ pform.display_name.label_tag }} {{ pform.display_name }}</div>
+          <div class="col-md-6">{{ pform.timezone.label_tag }} {{ pform.timezone }}</div>
+          <div class="col-md-12">{{ pform.bio.label_tag }} {{ pform.bio }}</div>
+          <div class="col-md-12">{{ pform.preferred_assets.label_tag }} {{ pform.preferred_assets }}</div>
+          <div class="col-md-6">{{ pform.daily_risk_limit_pct.label_tag }} {{ pform.daily_risk_limit_pct }}</div>
+          <div class="col-md-12">
+            <label class="form-label d-block">Avatar</label>
+            {{ pform.avatar }}
+          </div>
+          <div class="col-md-12 form-check mt-2">
+            {{ pform.notify_email }} <label class="form-check-label">Email notifications</label>
+          </div>
+          <div class="col-md-12 form-check">
+            {{ pform.notify_sound }} <label class="form-check-label">Sound notifications</label>
+          </div>
+          <div class="col-md-12 form-check">
+            {{ pform.two_factor_enabled }} <label class="form-check-label">Enable 2FA</label>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <button class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

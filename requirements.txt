@@ -1,0 +1,8 @@
+Django
+django-widget-tweaks
+pandas
+plotly
+requests
+xhtml2pdf
+yfinance
+Pillow

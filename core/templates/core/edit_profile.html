@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container py-5">
+  <h2 class="mb-4 text-primary fw-bold">👤 Edit Your Profile</h2>
+
+  <form method="POST" enctype="multipart/form-data" class="row g-4">
+    {% csrf_token %}
+
+    <!-- User Info -->
+    <div class="col-md-6">
+      <h5 class="text-secondary">Account Information</h5>
+      {{ user_form.non_field_errors }}
+      {% for field in user_form %}
+        <div class="mb-3">
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.errors %}
+            <div class="text-danger small">{{ field.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Profile Info -->
+    <div class="col-md-6">
+      <h5 class="text-secondary">Profile Preferences</h5>
+      {{ profile_form.non_field_errors }}
+      {% for field in profile_form %}
+        <div class="mb-3">
+          {% if field.field.widget.input_type == "checkbox" %}
+            <div class="form-check">
+              {{ field }}
+              {{ field.label_tag }}
+            </div>
+          {% else %}
+            {{ field.label_tag }}
+            {{ field }}
+          {% endif %}
+          {% if field.errors %}
+            <div class="text-danger small">{{ field.errors|striptags }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <!-- Avatar Preview -->
+    {% if user.userprofile.avatar %}
+      <div class="col-md-12">
+        <label class="form-label">Current Avatar:</label><br>
+        <img src="{{ user.userprofile.avatar.url }}" alt="Avatar" width="120" class="rounded-circle shadow-sm">
+      </div>
+    {% endif %}
+
+    <!-- Submit -->
+    <div class="col-12 mt-4">
+      <button type="submit" class="btn btn-success">
+        💾 Save Changes
+      </button>
+      <a href="{% url 'core:profile' %}" class="btn btn-outline-secondary ms-2">← Cancel</a>
+
+    </div>
+  </form>
+</div>
+{% endblock %}

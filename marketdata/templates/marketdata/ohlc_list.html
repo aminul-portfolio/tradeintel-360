@@ -1,0 +1,87 @@
+{# tradeintel/marketdata/templates/marketdata/ohlc_list.html #}
+{% extends "base.html" %}
+{% load tz %}
+
+{% block title %}Recent OHLC · MarketPulse{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h1 class="mb-0 d-flex align-items-center gap-2">
+      <span>🕯️</span><span>Recent OHLC Candles</span>
+    </h1>
+    <span class="badge bg-primary p-2">
+      Updated: {% now "Y-m-d H:i:s" %}
+    </span>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body table-responsive">
+      <table class="table table-striped align-middle text-center mb-0">
+        <thead class="table-success">
+          <tr>
+            <th>🔠 Symbol</th>
+            <th>🕒 Time (UTC)</th>
+            <th>🔓 Open</th>
+            <th>🚀 High</th>
+            <th>📉 Low</th>
+            <th>✅ Close</th>
+            <th>🔊 Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for candle in page_obj %}
+            <tr>
+              <td class="fw-semibold">{{ candle.asset.symbol }}</td>
+              <td>{{ candle.timestamp|date:"Y-m-d H:i" }}</td>
+              <td>{{ candle.open }}</td>
+              <td>{{ candle.high }}</td>
+              <td>{{ candle.low }}</td>
+              <td>{{ candle.close }}</td>
+              <td>{{ candle.volume|default:"" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-center text-warning">⚠️ No OHLC data available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="card-footer bg-light">
+      <nav aria-label="Pagination">
+  <ul class="pagination mb-0 justify-content-center">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">Previous</span></li>
+    {% endif %}
+
+    {# Use the pre-computed elided page range from the view #}
+    {% for num in elided_pages %}
+      {% if num == ELLIPSIS %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+      {% elif num == page_obj.number %}
+        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+      {% else %}
+        <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">Next</span></li>
+    {% endif %}
+  </ul>
+</nav>
+
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load widget_tweaks %}
+
+{% block body %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card shadow-lg border-0">
+        <div class="card-header bg-warning text-dark text-center fw-bold fs-4">
+          📝 Create Your Account
+        </div>
+        <div class="card-body px-4 py-4">
+          <form method="POST" novalidate>
+            {% csrf_token %}
+            {% for field in form %}
+              <div class="mb-3">
+                <label class="form-label fw-semibold">{{ field.label }}</label>
+                {% render_field field class="form-control" %}
+
+                {% if field.name == 'username' %}
+                  <div class="form-text text-muted">
+                    Username must be unique. Letters, digits, and @/./+/-/_ only.
+                  </div>
+                {% endif %}
+
+                {% if field.name == 'password1' %}
+                  <div class="form-text text-muted">
+                    Password must be at least 8 characters and should not be too common.
+                  </div>
+                {% endif %}
+
+                {% if field.name == 'password2' %}
+                  <div class="form-text text-muted">
+                    Re-enter the same password for confirmation.
+                  </div>
+                {% endif %}
+
+                {% if field.errors %}
+                  <div class="text-danger small mt-1">
+                    {{ field.errors|striptags }}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+
+            <button type="submit" class="btn btn-warning w-100 fw-bold">Sign Up</button>
+          </form>
+
+          <p class="mt-4 text-center text-muted">
+            Already have an account?
+            <a href="{% url 'movie:login' %}" class="text-decoration-none fw-semibold">Login</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

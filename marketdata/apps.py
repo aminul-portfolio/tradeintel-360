@@ -1,0 +1,7 @@
+# tradeintel/marketdata/apps.py
+from django.apps import AppConfig
+
+class MarketdataConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "marketdata"
+    verbose_name = "Market Data"

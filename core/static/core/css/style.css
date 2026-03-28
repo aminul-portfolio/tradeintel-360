@@ -1,0 +1,212 @@
+/* ===================================
+   GLOBAL BASE STYLES
+=================================== */
+body {
+  background: #f8f9fa;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+  font-size: 14px;
+}
+
+/* ===================================
+   HEADINGS
+=================================== */
+h1, h2 {
+  color: #2c3e50;
+  font-weight: 600;
+}
+h1 { font-size: 1.9rem; }
+h2 { font-size: 1.4rem; }
+
+/* ===================================
+   NAVBAR
+=================================== */
+.navbar .nav-link {
+  color: #fff !important;
+  padding: 0.4rem 0.9rem;
+  border-radius: 2rem;
+  font-weight: 500;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+.navbar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+.navbar .nav-link.active {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+.navbar .nav-link.btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+.bg-dark {
+  background-color: #0b1a33 !important;
+}
+
+/* ===================================
+   DROPDOWNS
+=================================== */
+.dropdown-menu-dark {
+  background-color: #1e3c72;
+}
+.dropdown-menu-dark .dropdown-item {
+  color: #fff;
+}
+.dropdown-menu-dark .dropdown-item:hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* ===================================
+   CARDS
+=================================== */
+.card {
+  border: none;
+  border-radius: 0.75rem;
+  box-shadow: 0 0.2rem 0.6rem rgba(0, 0, 0, 0.08);
+  background-color: #fff;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+}
+.card-title {
+  font-weight: 600;
+}
+.feature-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+.upload-card {
+  border: 2px dashed #ccc;
+  background-color: #fff;
+}
+
+/* ===================================
+   KPI CARDS
+=================================== */
+.kpi-card {
+  padding: 1.5rem;
+  min-height: 150px;
+  text-align: center;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.kpi-card h5 {
+  font-size: 1rem;
+  color: #444;
+  font-weight: 600;
+}
+.kpi-card .value {
+  font-size: 1.6rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+/* ===================================
+   BUTTONS
+=================================== */
+.btn, button[type="submit"] {
+  border-radius: 0.4rem;
+  font-weight: 500;
+}
+.btn-custom {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.3s ease, transform 0.2s ease;
+}
+.btn-custom:hover {
+  transform: scale(1.02);
+}
+
+/* ===================================
+   TABLES
+=================================== */
+.table {
+  background-color: #fff;
+}
+.table thead th {
+  background-color: #2c3e50;
+  color: #fff;
+  border: none;
+}
+.table-striped tbody tr:nth-of-type(odd) {
+  background-color: #f8f9fa;
+}
+.table th {
+  font-weight: 600;
+}
+.table-responsive {
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* ===================================
+   FORMS
+=================================== */
+.form-label {
+  font-weight: 500;
+  color: #333;
+  font-size: 0.9rem;
+}
+.form-control {
+  border-radius: 0.5rem;
+}
+.form-control-lg {
+  font-size: 1rem;
+  padding: 0.75rem;
+}
+
+/* ===================================
+   PAGINATION
+=================================== */
+.pagination .page-link {
+  color: #007bff;
+  border-radius: 0.3rem;
+  transition: all 0.2s;
+}
+.pagination .page-link:hover {
+  background-color: #e9ecef;
+}
+.pagination .active .page-link {
+  background-color: #007bff;
+  color: #fff;
+  border-color: #007bff;
+}
+
+/* ===================================
+   CHARTS
+=================================== */
+.chart-container {
+  background: #fff;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 2rem;
+  overflow: auto;
+}
+
+/* ===================================
+   IMAGES
+=================================== */
+.card img {
+  max-height: 200px;
+  object-fit: cover;
+}
+.modal-body img {
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+/* ===================================
+   RESPONSIVE
+=================================== */
+@media (max-width: 768px) {
+  .kpi-card .value {
+    font-size: 1.2rem;
+  }
+}

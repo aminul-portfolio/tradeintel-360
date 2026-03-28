@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% load static %}
+{% load widget_tweaks %}
+
+{% block title %}Performance Dashboard | TradeIntel{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'performance/css/dashboard.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h1 class="h3 m-0">Performance Dashboard</h1>
+    <div class="d-flex gap-2">
+      <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+        <i class="bi bi-upload"></i> Upload
+      </a>
+      <div class="btn-group">
+        <a href="{% url 'performance:download_cleaned_csv' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-filetype-csv"></i> CSV
+        </a>
+        <a href="{% url 'performance:download_excel' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-file-earmark-excel"></i> Excel
+        </a>
+        <a href="{% url 'performance:download_pdf' %}" class="btn btn-outline-secondary">
+          <i class="bi bi-file-earmark-pdf"></i> PDF
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="get" class="card p-3 mb-3">
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Start Date</label>
+        {% render_field filter_form.start_date class="form-control" %}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">End Date</label>
+        {% render_field filter_form.end_date class="form-control" %}
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Symbol</label>
+        {% render_field filter_form.symbol class="form-control" placeholder="e.g. XAUUSD" %}
+      </div>
+      <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-dark w-100" type="submit">
+          <i class="bi bi-funnel"></i> Apply Filters
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <!-- KPIs -->
+  {% if kpis %}
+  <div class="row g-3 mb-3">
+    {% for label, value in kpis.items %}
+      <div class="col-6 col-md-3">
+        <div class="kpi-card">
+          <h5 class="m-0">{{ label }}</h5>
+          <div class="value mt-2">{{ value }}</div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <div class="alert alert-info">Upload a file to see KPIs.</div>
+  {% endif %}
+
+  <!-- Charts -->
+  <div class="row g-3 mb-3">
+    {% if chart_equity %}
+      <div class="col-12 col-lg-6">
+        <div class="chart-container">{{ chart_equity|safe }}</div>
+      </div>
+    {% endif %}
+    {% if chart_profit %}
+      <div class="col-12 col-lg-6">
+        <div class="chart-container">{{ chart_profit|safe }}</div>
+      </div>
+    {% endif %}
+    {% if chart_hist %}
+      <div class="col-12 col-lg-6">
+        <div class="chart-container">{{ chart_hist|safe }}</div>
+      </div>
+    {% endif %}
+    {% if chart_month %}
+      <div class="col-12 col-lg-6">
+        <div class="chart-container">{{ chart_month|safe }}</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Optional Pie Sections -->
+  {% if chart_pie_sections %}
+  <div class="row g-3 mb-3">
+    {% for key, div in chart_pie_sections.items %}
+      <div class="col-12 col-lg-4">
+        <div class="chart-container">{{ div|safe }}</div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Trades Table (paginated page from view) -->
+  <div class="card p-3 mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h5 class="m-0">Trades (page {{ trade_page.number|default:1 }} of {{ trade_page.paginator.num_pages|default:1 }})</h5>
+    </div>
+
+    {% if df_html %}
+      <div class="table-responsive">
+        {{ df_html|safe }}
+      </div>
+
+      {% if trade_page and trade_page.paginator.num_pages > 1 %}
+      <nav class="mt-2">
+        <ul class="pagination pagination-sm mb-0">
+          {% if trade_page.has_previous %}
+            <li class="page-item">
+              <a class="page-link" href="?trade_page={{ trade_page.previous_page_number }}">&laquo; Prev</a>
+            </li>
+          {% endif %}
+          <li class="page-item disabled"><span class="page-link">Page {{ trade_page.number }} of {{ trade_page.paginator.num_pages }}</span></li>
+          {% if trade_page.has_next %}
+            <li class="page-item">
+              <a class="page-link" href="?trade_page={{ trade_page.next_page_number }}">Next &raquo;</a>
+            </li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% endif %}
+    {% else %}
+      <div class="text-muted">No trades to display yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- Uploaded Files -->
+  <div class="card p-3">
+    <h5 class="mb-2">Your Uploaded Files</h5>
+    {% if files and files.object_list %}
+      <div class="list-group">
+        {% for f in files %}
+          <div class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">{{ f.file.name|slice:'-50:' }}</div>
+              <small class="text-muted">Uploaded: {{ f.uploaded_at|date:"Y-m-d H:i" }} | Status: {{ f.status }}</small>
+            </div>
+            <div class="d-flex gap-2">
+              <a href="{% url 'performance:load_file' f.id %}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-arrow-repeat"></i> Load
+              </a>
+              {% if user.is_staff %}
+              <a href="{% url 'performance:admin_delete_file' f.id %}" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> Delete
+              </a>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Files pagination -->
+      {% if files.paginator.num_pages > 1 %}
+      <nav class="mt-2">
+        <ul class="pagination pagination-sm mb-0">
+          {% if files.has_previous %}
+            <li class="page-item"><a class="page-link" href="?page={{ files.previous_page_number }}">&laquo;</a></li>
+          {% endif %}
+          <li class="page-item disabled"><span class="page-link">Page {{ files.number }} of {{ files.paginator.num_pages }}</span></li>
+          {% if files.has_next %}
+            <li class="page-item"><a class="page-link" href="?page={{ files.next_page_number }}">&raquo;</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+      {% endif %}
+
+    {% else %}
+      <div class="text-muted">No files uploaded yet. Start with the <a href="{% url 'performance:upload_file' %}">Upload page</a>.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

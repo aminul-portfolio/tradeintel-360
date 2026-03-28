@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Trading KPIs Report | TradeIntel{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+  <div class="text-center mb-4">
+    <h1 class="display-5 text-primary">📊 Trading KPIs Report</h1>
+    <p class="text-muted">Generated KPI summary for your trade performance</p>
+  </div>
+
+  <div class="mb-3">
+    <p><strong>User:</strong> {{ user.username }}</p>
+    <p><strong>Generated At:</strong> {{ generated_at }}</p>
+  </div>
+
+  {% if kpis %}
+    <div class="table-responsive">
+      <table class="table table-bordered table-striped table-hover">
+        <thead class="table-dark">
+          <tr>
+            <th scope="col">KPI</th>
+            <th scope="col">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, value in kpis.items %}
+            <tr>
+              <td>{{ key }}</td>
+              <td>{{ value }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">
+      <strong>⚠ No KPI data available.</strong> Please upload your trade data to generate a report.
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

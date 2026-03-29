@@ -46,16 +46,16 @@ TradeIntel 360 is positioned as the **post-trade performance analytics** product
 
 ---
 
-## Core workflow
+## Overview
 
-The strongest reviewer path is:
+The project is built around a clear reviewer workflow:
 
 1. **Upload trade history**
 2. **Review the performance dashboard**
 3. **Open the KPI report**
 4. **Use export surfaces for downstream reporting**
 
-This keeps the project focused on post-trade analytics rather than mixed product identity.
+This keeps the repo focused on post-trade analytics rather than mixed product identity.
 
 ---
 
@@ -69,9 +69,8 @@ This project demonstrates:
 - KPI generation from loaded trade history
 - dashboard-based performance inspection
 - chart-based analysis surfaces
-- trade-level review table with pagination
-- filtered review workflow
-- export surfaces for CSV, Excel, and PDF output
+- trade-level review tables with filtering and pagination
+- export-oriented reporting workflow
 - premium reviewer-facing UI packaging in Django
 
 ---
@@ -113,20 +112,20 @@ The project currently displays KPI outputs using the existing KPI computation ut
 - Total Profit
 - Average Profit
 
-**May be supported depending on the current KPI utility implementation:**
-- gross profit
-- gross loss
-- average win
-- average loss
-- profit factor
-- expectancy
-- best trade
-- worst trade
-- max drawdown
+**Likely but requires direct formula verification in the KPI utility:**
+- Gross Profit
+- Gross Loss
+- Average Win
+- Average Loss
+- Profit Factor
+- Expectancy
+- Best Trade
+- Worst Trade
+- Max Drawdown
 
-**Unknown unless confirmed in the KPI utility:**
-- Sharpe ratio
-- volatility
+**Unknown unless explicitly confirmed in code:**
+- Sharpe Ratio
+- Volatility
 - advanced risk-adjusted metrics
 
 Only claim KPI definitions publicly if they are actually computed in the current codebase.
@@ -148,6 +147,7 @@ The best screens for a hiring manager or recruiter are:
 ## How to review this project
 
 ### 1. Clone the repo
+
 ```bash
-git clone <your-repo-url>
-cd <your-project-folder>
+git clone https://github.com/aminul-portfolio/tradeintel-360.git
+cd tradeintel-360

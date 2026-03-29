@@ -191,20 +191,20 @@
     </div>
 
     <div class="surface-card section-card">
-      <h2 class="section-heading mb-3">Implementation note</h2>
-      <p class="section-subcopy mb-3">
-        This UI is ready as an export configuration surface, but the current backend export implementation should only be described publicly according to what is actually supported in code.
-      </p>
+  <h2 class="section-heading mb-3">Export guidance</h2>
+  <p class="section-subcopy mb-3">
+    Configure filters and selected columns to generate a reporting-ready Excel output from the currently loaded trade dataset.
+  </p>
 
-      <div class="signal-badge mb-2">
-        <i class="bi bi-info-circle"></i>
-        Use evidence-based README wording
-      </div>
+  <div class="signal-badge mb-2">
+    <i class="bi bi-file-earmark-spreadsheet"></i>
+    Reporting-ready Excel export
+  </div>
 
-      <p class="section-subcopy mb-0">
-        Until the export view is fully connected to cleaned uploaded session data, avoid overclaiming advanced Excel reporting logic in the public project story.
-      </p>
-    </div>
+  <p class="section-subcopy mb-0">
+    Use this surface to refine the exported fields, apply review filters, and optionally include a KPI summary sheet for downstream analysis and reporting.
+  </p>
+</div>
   </div>
 </div>
 {% endblock %}

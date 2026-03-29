@@ -1,6 +1,6 @@
 # TradeIntel 360 — Trading Performance Analytics
 
-**TradeIntel 360** is a post-trade performance analytics data product built with **Python, Django, Pandas, and Plotly**. It turns uploaded trade history into KPI-driven review, dashboard-based analysis, report-style summary surfaces, and export-ready outputs for finance and trading workflows.
+**TradeIntel 360** is a post-trade performance analytics data product built with **Python, Django, Pandas, Plotly, and openpyxl**. It turns uploaded trade history into KPI-driven review, dashboard-based analysis, report-style summary surfaces, and export-ready outputs for finance and trading workflows.
 
 ---
 
@@ -33,29 +33,16 @@ Those responsibilities are deliberately separated from other projects in the wid
 
 ---
 
-## Portfolio positioning
-
-**Analytics Engineer | Data Engineer | Python & Django | ETL, KPI Dashboards, FinTech & BI**
-
-TradeIntel 360 is positioned as the **post-trade performance analytics** product in a broader FinTech portfolio:
-
-- **DataBridge Market API** → upstream market-data ingestion, normalization, ETL, ops visibility, API delivery
-- **MarketVista Dashboard** → market monitoring and analyst-facing market visibility
-- **RiskWise Planner** → pre-trade risk planning and scenario analysis
-- **TradeIntel 360** → post-trade performance analytics and review
-
----
-
 ## Overview
 
-The project is built around a clear reviewer workflow:
+The strongest reviewer path is:
 
 1. **Upload trade history**
 2. **Review the performance dashboard**
 3. **Open the KPI report**
 4. **Use export surfaces for downstream reporting**
 
-This keeps the repo focused on post-trade analytics rather than mixed product identity.
+This keeps the project focused on post-trade analytics rather than mixed product identity.
 
 ---
 
@@ -71,76 +58,72 @@ This project demonstrates:
 - chart-based analysis surfaces
 - trade-level review tables with filtering and pagination
 - export-oriented reporting workflow
-- premium reviewer-facing UI packaging in Django
+- reviewer-facing UI packaging in Django
 
 ---
 
 ## Proven features in the current repo
 
-Based on the current implementation, the following are supported in the project:
+Based on the current implementation, the project supports:
 
-- file upload for CSV/XLSX trade-history review
+- CSV/XLSX trade-history upload
 - session-backed cleaned data workflow
 - dashboard filters for date and symbol
-- smart search on the trade review table
-- KPI summary surface
+- smart search across the trade review table
+- KPI summary outputs from the loaded dataset
 - chart outputs for:
   - equity curve
   - profit per trade
   - profit distribution histogram
   - monthly performance
-  - optional segmented pie sections
+  - segmented win/loss pie sections where relevant fields are present
 - paginated trade review table
 - paginated uploaded-file history
 - KPI report page
 - PDF report generation
 - cleaned CSV export
 - cleaned Excel export
-- configurable Excel export surface
+- configurable Excel export with:
+  - selected-column export
+  - date filtering
+  - symbol filtering
+  - minimum RR filtering where RR data exists
+  - optional KPI sheet
+  - export metadata sheet
 
 ---
 
-## KPI coverage
+## KPI definitions
 
-The project currently displays KPI outputs using the existing KPI computation utility.
+TradeIntel 360 currently computes post-trade KPI outputs from the loaded trade dataset.
 
-**Proven in current UI outputs:**
-- Total Trades
-- Winning Trades
-- Losing Trades
-- Win Rate
-- Total Profit
-- Average Profit
+### Current KPI coverage
 
-**Likely but requires direct formula verification in the KPI utility:**
-- Gross Profit
-- Gross Loss
-- Average Win
-- Average Loss
-- Profit Factor
-- Expectancy
-- Best Trade
-- Worst Trade
-- Max Drawdown
+- **Total Trades** — count of rows with valid `Profit` values
+- **Winning Trades** — trades where `Profit > 0`
+- **Losing Trades** — trades where `Profit < 0`
+- **Break-even Trades** — trades where `Profit = 0`
+- **Win Rate (%)** — winning trades divided by total trades
+- **Total Profit** — sum of `Profit`
+- **Average Profit** — average `Profit` per trade
+- **Gross Profit** — sum of positive `Profit` values
+- **Gross Loss** — absolute sum of negative `Profit` values
+- **Average Win** — average positive `Profit`
+- **Average Loss** — absolute average negative `Profit`
+- **Profit Factor** — gross profit divided by gross loss
+- **Expectancy** — currently represented as average profit per trade
+- **Best Trade** — maximum `Profit`
+- **Worst Trade** — minimum `Profit`
+- **Max Drawdown** — maximum peak-to-trough decline from cumulative profit
+- **Sharpe** — currently a trade-based ratio derived from average profit and profit volatility
+- **Volatility** — currently the standard deviation of per-trade profit
 
-**Unknown unless explicitly confirmed in code:**
-- Sharpe Ratio
-- Volatility
-- advanced risk-adjusted metrics
+### KPI notes
 
-Only claim KPI definitions publicly if they are actually computed in the current codebase.
-
----
-
-## Screens to review
-
-The best screens for a hiring manager or recruiter are:
-
-- **Home** — product identity and reviewer path
-- **Upload Trade History** — entry point for loaded-data workflow
-- **Performance Dashboard** — KPI and chart review surface
-- **KPI Report** — structured summary surface
-- **PDF / Excel / CSV exports** — reporting-oriented outputs
+- KPI outputs are computed from the currently loaded dataset.
+- Date, symbol, and export filters can change the dataset being summarized.
+- Sharpe in this project should be read as a **trade-based implementation**, not an annualized institutional Sharpe.
+- Volatility in this project refers to **per-trade profit dispersion**, not market price volatility.
 
 ---
 

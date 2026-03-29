@@ -1,4 +1,3 @@
-# performance/views.py
 import csv
 import os
 from io import BytesIO, StringIO
@@ -29,6 +28,61 @@ def _query_without(request, *keys):
     for key in keys:
         q.pop(key, None)
     return q.urlencode()
+
+
+def _first_present(columns, candidates):
+    for col in candidates:
+        if col in columns:
+            return col
+    return None
+
+
+def _read_session_df(cleaned_data):
+    """
+    Safely load the cleaned session dataset.
+    Returns a DataFrame or None.
+    """
+    if not cleaned_data:
+        return None
+
+    try:
+        df = pd.read_json(StringIO(cleaned_data), orient="split")
+    except Exception:
+        return None
+
+    if df is None:
+        return None
+
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def _safe_compute_kpis(df):
+    """
+    Only compute KPIs when the current dataset actually supports the
+    existing KPI engine. This avoids overclaiming and prevents view crashes.
+    """
+    if df is None or df.empty or "Profit" not in df.columns:
+        return {}
+
+    working_df = df.copy()
+    working_df["Profit"] = pd.to_numeric(working_df["Profit"], errors="coerce")
+
+    if working_df["Profit"].notna().sum() == 0:
+        return {}
+
+    try:
+        return compute_kpis(working_df)
+    except Exception:
+        return {}
+
+
+def _is_trade_like_df(df):
+    if df is None or df.empty:
+        return False
+
+    trade_like_markers = ["Open", "Open Time", "Date", "Symbol", "Type", "Side", "Profit"]
+    return any(col in df.columns for col in trade_like_markers)
 
 
 def _smart_filter_df(df: pd.DataFrame, q: str) -> pd.DataFrame:
@@ -93,9 +147,10 @@ def dashboard(request):
     Also lists uploaded files.
     """
     cleaned_data = request.session.get("cleaned_data")
+    df = _read_session_df(cleaned_data)
 
     df_html = None
-    kpis = None
+    kpis = {}
     chart_equity = None
     chart_profit = None
     chart_hist = None
@@ -108,57 +163,64 @@ def dashboard(request):
     file_q = request.GET.get("file_q", "").strip()
     file_status = request.GET.get("file_status", "").strip()
 
-    if cleaned_data:
-        df = pd.read_json(StringIO(cleaned_data), orient="split")
+    if df is not None and not df.empty:
+        working_df = df.copy()
 
-        # Apply form filters
         if filter_form.is_valid():
             start_date = filter_form.cleaned_data.get("start_date")
             end_date = filter_form.cleaned_data.get("end_date")
             symbol = filter_form.cleaned_data.get("symbol")
 
             for date_col in ["Open", "Open Time", "Date"]:
-                if date_col in df.columns:
-                    df[date_col] = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
+                if date_col in working_df.columns:
+                    working_df[date_col] = pd.to_datetime(
+                        working_df[date_col],
+                        errors="coerce",
+                        dayfirst=True,
+                    )
                     if start_date:
-                        df = df[df[date_col] >= pd.to_datetime(start_date)]
+                        working_df = working_df[working_df[date_col] >= pd.to_datetime(start_date)]
                     if end_date:
-                        df = df[df[date_col] <= pd.to_datetime(end_date)]
+                        working_df = working_df[working_df[date_col] <= pd.to_datetime(end_date)]
                     break
 
-            if "Symbol" in df.columns and symbol:
-                df = df[df["Symbol"].astype(str).str.contains(symbol, case=False, na=False)]
+            if "Symbol" in working_df.columns and symbol:
+                working_df = working_df[
+                    working_df["Symbol"].astype(str).str.contains(symbol, case=False, na=False)
+                ]
 
-        # Smart filter
         if trade_q:
-            df = _smart_filter_df(df, trade_q)
+            working_df = _smart_filter_df(working_df, trade_q)
 
-        # Paginated trade table
-        trade_paginator = Paginator(df.to_dict("records"), 10)
+        trade_paginator = Paginator(working_df.to_dict("records"), 10)
         trade_page_number = request.GET.get("trade_page")
         trade_page = trade_paginator.get_page(trade_page_number)
         df_page = pd.DataFrame(trade_page.object_list)
-        df_html = df_page.to_html(classes="table table-striped align-middle", index=False) if not df_page.empty else None
 
-        # KPIs
-        try:
-            kpis = compute_kpis(df)
-        except Exception:
-            kpis = None
+        if not df_page.empty:
+            df_html = df_page.to_html(classes="table table-striped align-middle", index=False)
 
-        # Charts
-        if "Profit" in df.columns:
+        kpis = _safe_compute_kpis(working_df)
+
+        if "Profit" in working_df.columns:
+            working_df["Profit"] = pd.to_numeric(working_df["Profit"], errors="coerce")
+
             maybe_date = None
             for col in ["Open", "Open Time", "Date"]:
-                if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
+                if col in working_df.columns and pd.api.types.is_datetime64_any_dtype(working_df[col]):
                     maybe_date = col
                     break
 
             if maybe_date:
-                df_month = df.dropna(subset=[maybe_date]).copy()
+                df_month = working_df.dropna(subset=[maybe_date]).copy()
                 if not df_month.empty:
-                    df_month["Month"] = df_month[maybe_date].dt.to_period("M").astype(str)
-                    monthly_profit = df_month.groupby("Month")["Profit"].sum().reset_index()
+                    monthly_profit = (
+                        df_month.groupby(df_month[maybe_date].dt.to_period("M").astype(str))["Profit"]
+                        .sum()
+                        .reset_index(name="Profit")
+                    )
+                    monthly_profit.rename(columns={monthly_profit.columns[0]: "Month"}, inplace=True)
+
                     chart_month = opy.plot(
                         go.Figure(
                             data=[go.Bar(x=monthly_profit["Month"], y=monthly_profit["Profit"])],
@@ -168,11 +230,17 @@ def dashboard(request):
                         output_type="div",
                     )
 
-            df["Cumulative Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0).cumsum()
+            working_df["Cumulative Profit"] = working_df["Profit"].fillna(0).cumsum()
 
             chart_equity = opy.plot(
                 go.Figure(
-                    data=[go.Scatter(x=list(range(len(df))), y=df["Cumulative Profit"], mode="lines")],
+                    data=[
+                        go.Scatter(
+                            x=list(range(len(working_df))),
+                            y=working_df["Cumulative Profit"],
+                            mode="lines",
+                        )
+                    ],
                     layout=go.Layout(title="Equity Curve"),
                 ),
                 auto_open=False,
@@ -181,7 +249,7 @@ def dashboard(request):
 
             chart_profit = opy.plot(
                 go.Figure(
-                    data=[go.Bar(x=list(range(len(df))), y=df["Profit"])],
+                    data=[go.Bar(x=list(range(len(working_df))), y=working_df["Profit"].fillna(0))],
                     layout=go.Layout(title="Profit per Trade"),
                 ),
                 auto_open=False,
@@ -190,31 +258,33 @@ def dashboard(request):
 
             chart_hist = opy.plot(
                 go.Figure(
-                    data=[go.Histogram(x=df["Profit"], nbinsx=30)],
+                    data=[go.Histogram(x=working_df["Profit"].dropna(), nbinsx=30)],
                     layout=go.Layout(title="Profit Distribution Histogram"),
                 ),
                 auto_open=False,
                 output_type="div",
             )
 
-            sections = [("Overall", df)]
-            if "Type" in df.columns:
+            sections = [("Overall", working_df)]
+            if "Type" in working_df.columns:
                 sections.extend([
-                    ("Buy", df[df["Type"].astype(str).str.lower() == "buy"]),
-                    ("Sell", df[df["Type"].astype(str).str.lower() == "sell"]),
+                    ("Buy", working_df[working_df["Type"].astype(str).str.lower() == "buy"]),
+                    ("Sell", working_df[working_df["Type"].astype(str).str.lower() == "sell"]),
                 ])
 
             def build_pie(title, labels, values, colors):
                 return opy.plot(
                     go.Figure(
-                        data=[go.Pie(
-                            labels=labels,
-                            values=values,
-                            hole=0.4,
-                            hoverinfo="label+percent+value",
-                            textinfo="percent",
-                            marker=dict(colors=colors),
-                        )],
+                        data=[
+                            go.Pie(
+                                labels=labels,
+                                values=values,
+                                hole=0.4,
+                                hoverinfo="label+percent+value",
+                                textinfo="percent",
+                                marker=dict(colors=colors),
+                            )
+                        ],
                         layout=go.Layout(
                             title=title,
                             width=370,
@@ -227,11 +297,14 @@ def dashboard(request):
                     output_type="div",
                 )
 
-            for label, d in sections:
-                if d.empty or "Profit" not in d.columns or "Symbol" not in d.columns:
+            for label, section_df in sections:
+                if section_df.empty or "Profit" not in section_df.columns or "Symbol" not in section_df.columns:
                     continue
 
-                win_loss = d.groupby("Symbol")["Profit"].apply(
+                section_df = section_df.copy()
+                section_df["Profit"] = pd.to_numeric(section_df["Profit"], errors="coerce")
+
+                win_loss = section_df.groupby("Symbol")["Profit"].apply(
                     lambda x: pd.Series({
                         "Wins": (x > 0).sum(),
                         "Losses": (x <= 0).sum(),
@@ -365,11 +438,10 @@ def load_file(request, file_id: int):
 
 @login_required
 def download_cleaned_csv(request):
-    cleaned_data = request.session.get("cleaned_data")
-    if not cleaned_data:
-        return HttpResponse("No data to download.", status=400)
+    df = _read_session_df(request.session.get("cleaned_data"))
+    if df is None or df.empty:
+        return HttpResponse("No cleaned session data is available.", status=400)
 
-    df = pd.read_json(StringIO(cleaned_data), orient="split")
     csv_content = df.to_csv(index=False)
 
     response = HttpResponse(csv_content, content_type="text/csv")
@@ -379,11 +451,10 @@ def download_cleaned_csv(request):
 
 @login_required
 def download_excel(request):
-    cleaned_data = request.session.get("cleaned_data")
-    if not cleaned_data:
-        return HttpResponse("No data to export.", status=400)
+    df = _read_session_df(request.session.get("cleaned_data"))
+    if df is None or df.empty:
+        return HttpResponse("No cleaned session data is available.", status=400)
 
-    df = pd.read_json(StringIO(cleaned_data), orient="split")
     output = BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -401,23 +472,12 @@ def download_excel(request):
 
 @login_required
 def download_pdf(request):
-    cleaned_data = request.session.get("cleaned_data")
-    if not cleaned_data:
+    df = _read_session_df(request.session.get("cleaned_data"))
+    if df is None or df.empty:
         return HttpResponse("No data available.", status=400)
 
-    try:
-        df = pd.read_json(StringIO(cleaned_data), orient="split")
-    except Exception as e:
-        return HttpResponse(f"Error reading cleaned session data: {e}", status=500)
-
-    # Trade-like schema check
-    trade_like_markers = ["Open", "Open Time", "Date", "Symbol", "Type", "Side", "Profit"]
-    is_trade_like = any(col in df.columns for col in trade_like_markers)
-
-    try:
-        kpis = compute_kpis(df) if is_trade_like and df is not None else {}
-    except Exception:
-        kpis = {}
+    is_trade_like = _is_trade_like_df(df)
+    kpis = _safe_compute_kpis(df)
 
     def choose_report_columns(pdf_df: pd.DataFrame) -> list[str]:
         preferred_trade_cols = [
@@ -442,31 +502,24 @@ def download_pdf(request):
 
         return list(pdf_df.columns[:8])
 
-    if df is not None and not df.empty:
-        pdf_df = df.copy()
+    pdf_df = df.copy()
 
-        for col in pdf_df.columns:
-            if pd.api.types.is_datetime64_any_dtype(pdf_df[col]):
-                pdf_df[col] = pdf_df[col].dt.strftime("%Y-%m-%d %H:%M").fillna("")
-            elif pd.api.types.is_numeric_dtype(pdf_df[col]):
-                pdf_df[col] = pd.to_numeric(pdf_df[col], errors="coerce").round(2)
+    for col in pdf_df.columns:
+        if pd.api.types.is_datetime64_any_dtype(pdf_df[col]):
+            pdf_df[col] = pdf_df[col].dt.strftime("%Y-%m-%d %H:%M").fillna("")
+        elif pd.api.types.is_numeric_dtype(pdf_df[col]):
+            pdf_df[col] = pd.to_numeric(pdf_df[col], errors="coerce").round(2)
 
-        pdf_df = pdf_df.fillna("")
+    pdf_df = pdf_df.fillna("")
 
-        report_columns = choose_report_columns(pdf_df)
-        preview_df = pdf_df[report_columns].head(25)
+    report_columns = choose_report_columns(pdf_df)
+    preview_df = pdf_df[report_columns].head(25)
 
-        trade_columns = [str(col) for col in preview_df.columns.tolist()]
-        trade_rows = preview_df.astype(str).values.tolist()
-        has_trades = len(trade_rows) > 0
-        total_trade_rows = len(pdf_df)
-        displayed_trade_rows = len(trade_rows)
-    else:
-        trade_columns = []
-        trade_rows = []
-        has_trades = False
-        total_trade_rows = 0
-        displayed_trade_rows = 0
+    trade_columns = [str(col) for col in preview_df.columns.tolist()]
+    trade_rows = preview_df.astype(str).values.tolist()
+    has_trades = len(trade_rows) > 0
+    total_trade_rows = len(pdf_df)
+    displayed_trade_rows = len(trade_rows)
 
     template = get_template("performance/pdf_report.html")
     html = template.render(
@@ -496,11 +549,11 @@ def download_pdf(request):
 
     return response
 
+
 @login_required
 def kpi_report(request):
-    cleaned_data = request.session.get("cleaned_data")
-    df = pd.read_json(StringIO(cleaned_data), orient="split") if cleaned_data else None
-    kpis = compute_kpis(df) if df is not None else None
+    df = _read_session_df(request.session.get("cleaned_data"))
+    kpis = _safe_compute_kpis(df)
 
     kpi_rows = [{"metric": k, "value": v} for k, v in (kpis or {}).items()]
     kpi_q = request.GET.get("kpi_q", "").strip()
@@ -537,26 +590,12 @@ def export_excel(request):
     Applies filters to the loaded data and optionally includes a KPI sheet
     based on real computed outputs.
     """
-    cleaned_data = request.session.get("cleaned_data")
-
     fallback_columns = [
         "entry_time", "exit_time", "symbol", "side", "qty",
         "entry", "exit", "sl", "tp", "pnl", "rr", "tag", "notes"
     ]
 
-    df = None
-    if cleaned_data:
-        try:
-            df = pd.read_json(StringIO(cleaned_data), orient="split")
-            df.columns = [str(c).strip() for c in df.columns]
-        except Exception:
-            df = None
-
-    def first_present(columns, candidates):
-        for col in candidates:
-            if col in columns:
-                return col
-        return None
+    df = _read_session_df(request.session.get("cleaned_data"))
 
     def get_available_columns(dataframe):
         if dataframe is None or dataframe.empty:
@@ -596,13 +635,11 @@ def export_excel(request):
 
     working_df = df.copy()
 
-    # Parse likely date columns
     date_candidates = ["Open Time", "Open", "Date", "entry_time", "exit_time", "created_at", "updated_at"]
-    date_col = first_present(working_df.columns, date_candidates)
+    date_col = _first_present(working_df.columns, date_candidates)
     if date_col:
         working_df[date_col] = pd.to_datetime(working_df[date_col], errors="coerce")
 
-    # Apply filters
     start_date = (request.GET.get("start_date") or "").strip()
     end_date = (request.GET.get("end_date") or "").strip()
     symbol = (request.GET.get("symbol") or "").strip()
@@ -615,13 +652,13 @@ def export_excel(request):
         if end_date:
             working_df = working_df[working_df[date_col] <= pd.to_datetime(end_date, errors="coerce")]
 
-    symbol_col = first_present(working_df.columns, ["Symbol", "symbol"])
+    symbol_col = _first_present(working_df.columns, ["Symbol", "symbol"])
     if symbol and symbol_col:
         working_df = working_df[
             working_df[symbol_col].astype(str).str.contains(symbol, case=False, na=False)
         ]
 
-    rr_col = first_present(working_df.columns, ["RR", "rr", "R:R", "risk_reward", "Risk Reward"])
+    rr_col = _first_present(working_df.columns, ["RR", "rr", "R:R", "risk_reward", "Risk Reward"])
     if min_rr and rr_col:
         try:
             min_rr_value = float(min_rr)
@@ -630,7 +667,6 @@ def export_excel(request):
         except ValueError:
             pass
 
-    # Keep only selected columns that actually exist
     selected_cols = [c for c in request.GET.getlist("cols") if c in working_df.columns]
     if not selected_cols:
         selected_cols = [c for c in available_columns if c in working_df.columns]
@@ -639,7 +675,6 @@ def export_excel(request):
 
     export_df = working_df[selected_cols].copy()
 
-    # Format datetime columns for Excel readability
     for col in export_df.columns:
         if pd.api.types.is_datetime64_any_dtype(export_df[col]):
             export_df[col] = export_df[col].dt.strftime("%Y-%m-%d %H:%M")
@@ -661,10 +696,7 @@ def export_excel(request):
         pd.DataFrame(meta_rows).to_excel(writer, index=False, sheet_name="ExportMeta")
 
         if include_kpis:
-            try:
-                kpis = compute_kpis(working_df) if not working_df.empty else {}
-            except Exception:
-                kpis = {}
+            kpis = _safe_compute_kpis(working_df)
 
             if kpis:
                 kpi_rows = [{"Metric": key, "Value": value} for key, value in kpis.items()]
@@ -687,6 +719,7 @@ def export_excel(request):
     )
     response["Content-Disposition"] = f'attachment; filename="tradeintel_report_{timestamp}.xlsx"'
     return response
+
 
 def project_one_plan(request):
     return render(request, "performance/project_one_plan.html")

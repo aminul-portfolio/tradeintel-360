@@ -6,3 +6,4 @@ requests
 xhtml2pdf
 yfinance
 Pillow
+openpyxl

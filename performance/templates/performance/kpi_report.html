@@ -1,43 +1,187 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Trading KPIs Report | TradeIntel{% endblock %}
+{% block title %}KPI Report | TradeIntel 360{% endblock %}
 
 {% block content %}
-<div class="container my-5">
-  <div class="text-center mb-4">
-    <h1 class="display-5 text-primary">📊 Trading KPIs Report</h1>
-    <p class="text-muted">Generated KPI summary for your trade performance</p>
+{% include "partials/page_header.html" with eyebrow="Reporting surface" eyebrow_icon="bi-bar-chart-line" title="KPI report" copy="Review the currently generated performance indicators in a more report-oriented format. This surface is designed for structured post-trade review and analyst-facing summary output." %}
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="surface-card section-card h-100">
+      <h2 class="section-heading mb-3">Report context</h2>
+
+      <div class="vstack gap-3">
+        <div>
+          <div class="app-kpi-label">User</div>
+          <div class="fw-semibold">{{ user.username }}</div>
+        </div>
+        <div>
+          <div class="app-kpi-label">Generated at</div>
+          <div class="fw-semibold">{{ generated_at }}</div>
+        </div>
+      </div>
+
+      <hr class="my-4">
+
+      <h2 class="section-heading mb-2">Reviewer path</h2>
+      <p class="section-subcopy mb-3">
+        This page works best as the third step in the main product flow.
+      </p>
+
+      <div class="vstack gap-3">
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">1</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Upload</h3>
+            <p class="section-subcopy mb-0">Load trade history into the application.</p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">2</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Dashboard</h3>
+            <p class="section-subcopy mb-0">Review KPI summaries, charts, and trade-level context.</p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">3</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Report</h3>
+            <p class="section-subcopy mb-0">Use this report page for structured KPI summary and review.</p>
+          </div>
+        </div>
+      </div>
+
+      <hr class="my-4">
+
+      <div class="d-grid gap-2">
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+          <i class="bi bi-speedometer2 me-2"></i>Back to Dashboard
+        </a>
+        <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+          <i class="bi bi-upload me-2"></i>Upload New File
+        </a>
+      </div>
+    </div>
   </div>
 
-  <div class="mb-3">
-    <p><strong>User:</strong> {{ user.username }}</p>
-    <p><strong>Generated At:</strong> {{ generated_at }}</p>
-  </div>
+  <div class="col-lg-8">
+    <div class="surface-card section-card h-100">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">Performance KPI summary</h2>
+          <p class="section-subcopy mb-0">
+            Structured KPI output generated from the currently loaded trade dataset.
+          </p>
+        </div>
 
-  {% if kpis %}
-    <div class="table-responsive">
-      <table class="table table-bordered table-striped table-hover">
-        <thead class="table-dark">
-          <tr>
-            <th scope="col">KPI</th>
-            <th scope="col">Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for key, value in kpis.items %}
-            <tr>
-              <td>{{ key }}</td>
-              <td>{{ value }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+        <span class="signal-badge">
+          <i class="bi bi-table me-1"></i>
+          Report view
+        </span>
+      </div>
+
+      {% if kpis %}
+        <form method="get" class="app-filter-bar mb-3">
+          <div class="row g-3 w-100">
+            <div class="col-md-9">
+              <label class="form-label">KPI filter</label>
+              <input
+                type="text"
+                name="kpi_q"
+                value="{{ kpi_q }}"
+                class="form-control"
+                placeholder="Search KPI name or value..."
+              >
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end">
+              <button class="btn btn-dark w-100" type="submit">
+                <i class="bi bi-funnel me-2"></i>Filter
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div class="table-shell">
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">KPI</th>
+                  <th scope="col">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if kpi_page and kpi_page.object_list %}
+                  {% for row in kpi_page.object_list %}
+                    <tr>
+                      <td class="fw-semibold">{{ row.metric }}</td>
+                      <td>{{ row.value }}</td>
+                    </tr>
+                  {% endfor %}
+                {% else %}
+                  {% for key, value in kpis.items %}
+                    <tr>
+                      <td class="fw-semibold">{{ key }}</td>
+                      <td>{{ value }}</td>
+                    </tr>
+                  {% endfor %}
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {% if kpi_page and kpi_page.paginator.num_pages > 1 %}
+        <nav class="mt-3">
+          <ul class="pagination pagination-sm mb-0">
+            {% if kpi_page.has_previous %}
+              <li class="page-item">
+                <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.previous_page_number }}">
+                  &laquo; Prev
+                </a>
+              </li>
+            {% endif %}
+
+            <li class="page-item disabled">
+              <span class="page-link">
+                Page {{ kpi_page.number }} of {{ kpi_page.paginator.num_pages }}
+              </span>
+            </li>
+
+            {% if kpi_page.has_next %}
+              <li class="page-item">
+                <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.next_page_number }}">
+                  Next &raquo;
+                </a>
+              </li>
+            {% endif %}
+          </ul>
+        </nav>
+        {% endif %}
+
+        <div class="note-box mt-3">
+          This summary reflects the KPI values generated from the currently loaded trade dataset and the active review workflow.
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state__icon">
+            <i class="bi bi-bar-chart-line"></i>
+          </div>
+          <h2 class="section-heading mb-2">No KPI data available</h2>
+          <p class="section-subcopy mb-3">
+            Upload trade history first so the application can generate performance metrics and reporting outputs.
+          </p>
+          <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+            <i class="bi bi-cloud-arrow-up me-2"></i>Upload Trade History
+          </a>
+        </div>
+      {% endif %}
     </div>
-  {% else %}
-    <div class="alert alert-warning">
-      <strong>⚠ No KPI data available.</strong> Please upload your trade data to generate a report.
-    </div>
-  {% endif %}
+  </div>
 </div>
 {% endblock %}

@@ -1,83 +1,210 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Export to Excel | TradeIntel{% endblock %}
+{% block title %}Excel Export | TradeIntel 360{% endblock %}
 
 {% block content %}
-<div class="container">
-  <h1 class="mb-3">Export Trades to Excel</h1>
-  <p class="text-muted">Choose filters and columns, then download an .xlsx report.</p>
+{% include "partials/page_header.html" with eyebrow="Export surface" eyebrow_icon="bi-file-spreadsheet" title="Excel export configuration" copy="Choose export filters and column selections for the Excel output surface. This page is positioned as a configurable export workflow for post-trade review and reporting." %}
 
-  <form method="get" action="{% url 'performance:export_excel' %}" class="card p-4">
-    <!-- Filters -->
-    <h5 class="mb-3">Filters</h5>
-    <div class="row g-3">
-      <div class="col-md-3">
-        <label class="form-label">Start Date</label>
-        <input type="date" name="start_date" class="form-control" value="{{ request.GET.start_date }}">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">End Date</label>
-        <input type="date" name="end_date" class="form-control" value="{{ request.GET.end_date }}">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Symbol</label>
-        <input type="text" name="symbol" placeholder="e.g. BTCUSD, XAUUSD" class="form-control" value="{{ request.GET.symbol }}">
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Min R/R</label>
-        <input type="number" step="0.01" name="min_rr" class="form-control" placeholder="e.g. 1.5" value="{{ request.GET.min_rr }}">
-      </div>
-    </div>
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="surface-card section-card-lg h-100">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">Export settings</h2>
+          <p class="section-subcopy mb-0">
+            Configure filters and choose which fields should appear in the generated Excel file.
+          </p>
+        </div>
 
-    <hr class="my-4">
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+            <i class="bi bi-speedometer2 me-2"></i>Back to Dashboard
+          </a>
+          <a href="{% url 'performance:kpi_report' %}" class="btn btn-soft">
+            <i class="bi bi-bar-chart-line me-2"></i>KPI Report
+          </a>
+        </div>
+      </div>
 
-    <!-- Columns -->
-    <h5 class="mb-2">Columns to include</h5>
-    <div class="row">
-      <div class="col-md-12">
-        <div class="row g-2">
-          {% for col in columns %}
-          <div class="col-md-3">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="cols" value="{{ col }}"
-                     id="col_{{ col }}"
-                     {% if col in selected_cols %}checked{% endif %}>
-              <label class="form-check-label" for="col_{{ col }}">{{ col|title }}</label>
+      <form method="get" action="{% url 'performance:export_excel' %}">
+        <div class="surface-card-strong section-card mb-4">
+          <h3 class="h5 fw-bold mb-3">Filters</h3>
+
+          <div class="row g-3">
+            <div class="col-md-3">
+              <label class="form-label">Start Date</label>
+              <input
+                type="date"
+                name="start_date"
+                class="form-control"
+                value="{{ request.GET.start_date }}"
+              >
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">End Date</label>
+              <input
+                type="date"
+                name="end_date"
+                class="form-control"
+                value="{{ request.GET.end_date }}"
+              >
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Symbol</label>
+              <input
+                type="text"
+                name="symbol"
+                class="form-control"
+                placeholder="e.g. BTCUSD, XAUUSD"
+                value="{{ request.GET.symbol }}"
+              >
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Min R/R</label>
+              <input
+                type="number"
+                step="0.01"
+                name="min_rr"
+                class="form-control"
+                placeholder="e.g. 1.5"
+                value="{{ request.GET.min_rr }}"
+              >
             </div>
           </div>
-          {% endfor %}
+        </div>
+
+        <div class="surface-card-strong section-card mb-4">
+          <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+            <div>
+              <h3 class="h5 fw-bold mb-1">Columns to include</h3>
+              <p class="section-subcopy mb-0">
+                Select the output fields that should be included in the generated Excel sheet.
+              </p>
+            </div>
+
+            <span class="signal-badge">
+              <i class="bi bi-columns-gap"></i>
+              {{ selected_cols|length }} selected
+            </span>
+          </div>
+
+          <div class="row g-2">
+            {% for col in columns %}
+            <div class="col-sm-6 col-lg-4">
+              <label class="surface-card-strong d-flex align-items-center gap-2 p-3 h-100" for="col_{{ col }}">
+                <input
+                  class="form-check-input mt-0"
+                  type="checkbox"
+                  name="cols"
+                  value="{{ col }}"
+                  id="col_{{ col }}"
+                  {% if col in selected_cols %}checked{% endif %}
+                >
+                <span class="fw-semibold">{{ col|title }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="form-check mt-4">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              name="include_kpis"
+              id="include_kpis"
+              {% if 'include_kpis' in request.GET %}checked{% endif %}
+            >
+            <label class="form-check-label" for="include_kpis">
+              Include a KPI sheet in the Excel file
+            </label>
+          </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-soft" type="submit" name="preview" value="1">
+            <i class="bi bi-eye me-2"></i>Preview Options
+          </button>
+
+          <button class="btn btn-primary" type="submit" name="download" value="1">
+            <i class="bi bi-file-earmark-arrow-down me-2"></i>Download Excel
+          </button>
+        </div>
+      </form>
+
+      {% if request.GET.preview %}
+      <div class="surface-card-strong section-card mt-4">
+        <h3 class="h6 fw-bold mb-2">Preview summary</h3>
+        <p class="section-subcopy mb-2">
+          This export will use the selected filters and selected columns shown above.
+        </p>
+        <ul class="mb-0 section-subcopy">
+          <li>Symbol: {{ request.GET.symbol|default:"Any" }}</li>
+          <li>Min R/R: {{ request.GET.min_rr|default:"Not set" }}</li>
+          <li>Include KPI sheet:
+            {% if 'include_kpis' in request.GET %}Yes{% else %}No{% endif %}
+          </li>
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="surface-card section-card mb-4">
+      <h2 class="section-heading mb-3">Reviewer flow</h2>
+
+      <div class="vstack gap-3">
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">1</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Upload</h3>
+            <p class="section-subcopy mb-0">
+              Load trade history into the application.
+            </p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">2</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Review</h3>
+            <p class="section-subcopy mb-0">
+              Inspect dashboard metrics, charts, and trade-level context.
+            </p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">3</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Export</h3>
+            <p class="section-subcopy mb-0">
+              Configure and generate export-ready output for reporting workflows.
+            </p>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="form-check mt-3">
-      <input class="form-check-input" type="checkbox" name="include_kpis" id="include_kpis"
-             {% if 'include_kpis' in request.GET %}checked{% endif %}>
-      <label class="form-check-label" for="include_kpis">
-        Include a KPIs sheet (Win rate, Sharpe, Max DD, Profit Factor)
-      </label>
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Implementation note</h2>
+      <p class="section-subcopy mb-3">
+        This UI is ready as an export configuration surface, but the current backend export implementation should only be described publicly according to what is actually supported in code.
+      </p>
+
+      <div class="signal-badge mb-2">
+        <i class="bi bi-info-circle"></i>
+        Use evidence-based README wording
+      </div>
+
+      <p class="section-subcopy mb-0">
+        Until the export view is fully connected to cleaned uploaded session data, avoid overclaiming advanced Excel reporting logic in the public project story.
+      </p>
     </div>
-
-    <hr class="my-4">
-
-    <div class="d-flex gap-2">
-      <!-- Preview just re-renders this page with current selections -->
-      <button class="btn btn-outline-secondary" type="submit" name="preview" value="1">
-        <i class="bi bi-eye"></i> Preview Options
-      </button>
-
-      <!-- Download triggers Excel file download -->
-      <button class="btn btn-success" type="submit" name="download" value="1">
-        <i class="bi bi-file-earmark-arrow-down"></i> Download Excel
-      </button>
-    </div>
-  </form>
-
-  {% if request.GET.preview %}
-  <div class="alert alert-info mt-3">
-    <strong>Preview:</strong> This will generate an Excel file with your selected filters and columns.
   </div>
-  {% endif %}
 </div>
 {% endblock %}

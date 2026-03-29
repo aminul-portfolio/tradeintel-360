@@ -1,45 +1,97 @@
 {% extends "base.html" %}
 
-{% block title %}Upload Trading File{% endblock %}
+{% block title %}Upload Trade History - TradeIntel 360{% endblock %}
 
 {% block content %}
-<div class="container my-5">
-  <div class="row justify-content-center">
-    <div class="col-md-8 col-lg-6">
-      <div class="card shadow-sm border-0">
-        <div class="card-body">
-          <h2 class="card-title text-center mb-4">
-            <i class="bi bi-upload"></i> Upload Trading File
-          </h2>
+{% include "partials/page_header.html" with eyebrow="Primary reviewer flow" eyebrow_icon="bi-upload" title="Upload trade history" copy="Start the TradeIntel 360 review workflow by uploading exported trade history. This page is the main entry point for post-trade KPI analysis, dashboard review, and reporting outputs." %}
 
-          {% if messages %}
-            {% for message in messages %}
-              <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-              </div>
-            {% endfor %}
-          {% endif %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="form-shell surface-card section-card-lg h-100">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">Import file</h2>
+          <p class="section-subcopy mb-0">
+            Upload a CSV or Excel file containing executed trade history so the application can prepare dashboard and KPI review surfaces.
+          </p>
+        </div>
+        <span class="signal-badge">
+          <i class="bi bi-file-earmark-spreadsheet"></i>
+          CSV / XLSX
+        </span>
+      </div>
 
-          <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
-            {% csrf_token %}
-            <div class="mb-3">
-              {{ form.file.label_tag }}
-              {{ form.file }}
+      <form method="post" enctype="multipart/form-data" novalidate>
+        {% csrf_token %}
+
+        <div class="mb-4">
+          <label for="{{ form.file.id_for_label }}" class="form-label">Trade history file</label>
+          {{ form.file }}
+          {% if form.file.errors %}
+            <div class="text-danger small mt-2">
+              {% for error in form.file.errors %}
+                <div>{{ error }}</div>
+              {% endfor %}
             </div>
-            <button type="submit" class="btn btn-primary w-100">
-              <i class="bi bi-cloud-arrow-up"></i> Upload File
-            </button>
-          </form>
+          {% endif %}
+          <div class="form-text mt-2">
+            Use an exported file that represents executed trading activity. Reviewer flow is strongest when the file reflects real trade history rather than placeholder sample data.
+          </div>
+        </div>
 
-          <div class="text-center mt-3">
-            <a href="{% url 'performance:dashboard' %}" class="btn btn-link">
-              <i class="bi bi-arrow-left"></i> Back to Dashboard
-            </a>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-cloud-arrow-up me-2"></i>Upload File
+          </button>
+          <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+            <i class="bi bi-speedometer2 me-2"></i>Open Dashboard
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
 
+  <div class="col-lg-5">
+    <div class="surface-card section-card h-100">
+      <h2 class="section-heading mb-3">What happens next</h2>
+      <div class="vstack gap-3">
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">1</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Parse and prepare</h3>
+            <p class="section-subcopy mb-0">
+              Uploaded trade history is prepared for performance analysis and downstream review surfaces.
+            </p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">2</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Review dashboard</h3>
+            <p class="section-subcopy mb-0">
+              Move into the performance dashboard to inspect KPI-led summaries, trends, and trade review context.
+            </p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">3</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Open KPI report</h3>
+            <p class="section-subcopy mb-0">
+              Continue into the report surface for a more structured performance summary and export-adjacent review path.
+            </p>
           </div>
         </div>
       </div>
+
+      <hr class="my-4">
+
+      <h2 class="section-heading mb-2">Recommended reviewer path</h2>
+      <p class="section-subcopy mb-0">
+        Upload Trade History → Performance Dashboard → KPI Report
+      </p>
     </div>
   </div>
 </div>

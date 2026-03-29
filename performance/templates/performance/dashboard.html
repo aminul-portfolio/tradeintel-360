@@ -2,161 +2,333 @@
 {% load static %}
 {% load widget_tweaks %}
 
-{% block title %}Performance Dashboard | TradeIntel{% endblock %}
+{% block title %}Performance Dashboard | TradeIntel 360{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'performance/css/dashboard.css' %}">
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid">
+{% include "partials/page_header.html" with eyebrow="Core reviewer flow" eyebrow_icon="bi-speedometer2" title="Performance dashboard" copy="Review uploaded trade history through KPI-led summaries, chart-based performance analysis, trade-level inspection, and export-ready reporting surfaces." %}
 
-  <!-- Header -->
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <h1 class="h3 m-0">Performance Dashboard</h1>
-    <div class="d-flex gap-2">
-      <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
-        <i class="bi bi-upload"></i> Upload
-      </a>
-      <div class="btn-group">
-        <a href="{% url 'performance:download_cleaned_csv' %}" class="btn btn-outline-secondary">
-          <i class="bi bi-filetype-csv"></i> CSV
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="surface-card section-card h-100">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">Applied filters</h2>
+          <p class="section-subcopy mb-0">
+            Narrow the review surface by trade date, symbol, and smart search before inspecting KPIs, charts, and trade-level outputs.
+          </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+            <i class="bi bi-upload me-2"></i>Upload
+          </a>
+          <a href="{% url 'performance:kpi_report' %}" class="btn btn-soft">
+            <i class="bi bi-bar-chart-line me-2"></i>KPI Report
+          </a>
+        </div>
+      </div>
+
+      <form method="get" class="app-filter-bar">
+        <input type="hidden" name="file_q" value="{{ file_q }}">
+        <input type="hidden" name="file_status" value="{{ file_status }}">
+
+        <div class="row g-3 w-100">
+          <div class="col-md-3">
+            <label class="form-label">Start Date</label>
+            {% render_field filter_form.start_date class="form-control" %}
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">End Date</label>
+            {% render_field filter_form.end_date class="form-control" %}
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Symbol</label>
+            {% render_field filter_form.symbol class="form-control" placeholder="e.g. XAUUSD" %}
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Smart Filter</label>
+            <input
+              type="text"
+              name="q"
+              value="{{ trade_q }}"
+              class="form-control"
+              placeholder="Symbol, type, note, profit, date..."
+            >
+          </div>
+
+          <div class="col-12 d-flex flex-wrap gap-2">
+            <button class="btn btn-dark" type="submit">
+              <i class="bi bi-funnel me-2"></i>Apply Filters
+            </button>
+            <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+              <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+            </a>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="surface-card section-card h-100">
+      <h2 class="section-heading mb-3">Export outputs</h2>
+      <p class="section-subcopy mb-3">
+        Move from on-screen review into the available export surfaces for cleaned data and report output.
+      </p>
+
+      <div class="d-grid gap-2">
+        <a href="{% url 'performance:download_cleaned_csv' %}" class="btn btn-soft">
+          <i class="bi bi-filetype-csv me-2"></i>Download CSV
         </a>
-        <a href="{% url 'performance:download_excel' %}" class="btn btn-outline-secondary">
-          <i class="bi bi-file-earmark-excel"></i> Excel
+        <a href="{% url 'performance:download_excel' %}" class="btn btn-soft">
+          <i class="bi bi-file-earmark-excel me-2"></i>Download Excel
         </a>
-        <a href="{% url 'performance:download_pdf' %}" class="btn btn-outline-secondary">
-          <i class="bi bi-file-earmark-pdf"></i> PDF
+        <a href="{% url 'performance:download_pdf' %}" class="btn btn-soft">
+          <i class="bi bi-file-earmark-pdf me-2"></i>Download PDF
+        </a>
+        <a href="{% url 'performance:export_excel' %}" class="btn btn-soft">
+          <i class="bi bi-file-spreadsheet me-2"></i>Excel Export UI
         </a>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- Filters -->
-  <form method="get" class="card p-3 mb-3">
-    <div class="row g-3">
-      <div class="col-md-3">
-        <label class="form-label">Start Date</label>
-        {% render_field filter_form.start_date class="form-control" %}
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">End Date</label>
-        {% render_field filter_form.end_date class="form-control" %}
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Symbol</label>
-        {% render_field filter_form.symbol class="form-control" placeholder="e.g. XAUUSD" %}
-      </div>
-      <div class="col-md-3 d-flex align-items-end">
-        <button class="btn btn-dark w-100" type="submit">
-          <i class="bi bi-funnel"></i> Apply Filters
-        </button>
-      </div>
-    </div>
-  </form>
+{% if kpis %}
+<section class="mb-4">
+  <div class="mb-3">
+    <h2 class="section-heading mb-1">KPI summary</h2>
+    <p class="section-subcopy mb-0">
+      High-level performance indicators derived from the currently loaded trade history after active filters have been applied.
+    </p>
+  </div>
 
-  <!-- KPIs -->
-  {% if kpis %}
-  <div class="row g-3 mb-3">
+  <div class="row g-3">
     {% for label, value in kpis.items %}
-      <div class="col-6 col-md-3">
-        <div class="kpi-card">
-          <h5 class="m-0">{{ label }}</h5>
-          <div class="value mt-2">{{ value }}</div>
+      <div class="col-6 col-md-4 col-xl-3">
+        <div class="app-kpi-card">
+          <div class="app-kpi-label">{{ label }}</div>
+          <div class="app-kpi-value">{{ value }}</div>
         </div>
       </div>
     {% endfor %}
   </div>
-  {% else %}
-    <div class="alert alert-info">Upload a file to see KPIs.</div>
-  {% endif %}
+</section>
+{% else %}
+<section class="mb-4">
+  <div class="surface-card section-card">
+    <div class="empty-state">
+      <div class="empty-state__icon">
+        <i class="bi bi-upload"></i>
+      </div>
+      <h2 class="section-heading mb-2">No KPI output yet</h2>
+      <p class="section-subcopy mb-3">
+        Upload a trading file to populate the dashboard with performance metrics, chart outputs, and trade review data.
+      </p>
+      <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+        <i class="bi bi-cloud-arrow-up me-2"></i>Upload Trade History
+      </a>
+    </div>
+  </div>
+</section>
+{% endif %}
 
-  <!-- Charts -->
-  <div class="row g-3 mb-3">
+<section class="mb-4">
+  <div class="mb-3">
+    <h2 class="section-heading mb-1">Performance visuals</h2>
+    <p class="section-subcopy mb-0">
+      Review the equity path, profit behaviour, outcome distribution, and monthly performance pattern from the current dataset.
+    </p>
+  </div>
+
+  <div class="row g-3">
     {% if chart_equity %}
       <div class="col-12 col-lg-6">
-        <div class="chart-container">{{ chart_equity|safe }}</div>
+        <div class="chart-shell dashboard-plotly h-100">
+          {{ chart_equity|safe }}
+        </div>
       </div>
     {% endif %}
+
     {% if chart_profit %}
       <div class="col-12 col-lg-6">
-        <div class="chart-container">{{ chart_profit|safe }}</div>
+        <div class="chart-shell dashboard-plotly h-100">
+          {{ chart_profit|safe }}
+        </div>
       </div>
     {% endif %}
+
     {% if chart_hist %}
       <div class="col-12 col-lg-6">
-        <div class="chart-container">{{ chart_hist|safe }}</div>
+        <div class="chart-shell dashboard-plotly h-100">
+          {{ chart_hist|safe }}
+        </div>
       </div>
     {% endif %}
+
     {% if chart_month %}
       <div class="col-12 col-lg-6">
-        <div class="chart-container">{{ chart_month|safe }}</div>
+        <div class="chart-shell dashboard-plotly h-100">
+          {{ chart_month|safe }}
+        </div>
       </div>
     {% endif %}
   </div>
+</section>
 
-  <!-- Optional Pie Sections -->
-  {% if chart_pie_sections %}
-  <div class="row g-3 mb-3">
+{% if chart_pie_sections %}
+<section class="mb-4">
+  <div class="mb-3">
+    <h2 class="section-heading mb-1">Breakdown views</h2>
+    <p class="section-subcopy mb-0">
+      Additional segmented views help surface distribution patterns in the loaded trade set.
+    </p>
+  </div>
+
+  <div class="row g-3">
     {% for key, div in chart_pie_sections.items %}
       <div class="col-12 col-lg-4">
-        <div class="chart-container">{{ div|safe }}</div>
+        <div class="chart-shell dashboard-plotly h-100">
+          {{ div|safe }}
+        </div>
       </div>
     {% endfor %}
   </div>
-  {% endif %}
+</section>
+{% endif %}
 
-  <!-- Trades Table (paginated page from view) -->
-  <div class="card p-3 mb-3">
-    <div class="d-flex align-items-center justify-content-between mb-2">
-      <h5 class="m-0">Trades (page {{ trade_page.number|default:1 }} of {{ trade_page.paginator.num_pages|default:1 }})</h5>
+<section class="mb-4">
+  <div class="surface-card section-card">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="section-heading mb-1">Trade review table</h2>
+        <p class="section-subcopy mb-0">
+          Trade-level inspection surface for the current dataset.
+        </p>
+      </div>
+
+      {% if trade_page %}
+      <span class="signal-badge">
+        <i class="bi bi-table me-1"></i>
+        Page {{ trade_page.number|default:1 }} of {{ trade_page.paginator.num_pages|default:1 }}
+      </span>
+      {% endif %}
     </div>
 
     {% if df_html %}
-      <div class="table-responsive">
-        {{ df_html|safe }}
+      <div class="table-shell">
+        <div class="table-responsive">
+          {{ df_html|safe }}
+        </div>
       </div>
 
       {% if trade_page and trade_page.paginator.num_pages > 1 %}
-      <nav class="mt-2">
+      <nav class="mt-3">
         <ul class="pagination pagination-sm mb-0">
           {% if trade_page.has_previous %}
             <li class="page-item">
-              <a class="page-link" href="?trade_page={{ trade_page.previous_page_number }}">&laquo; Prev</a>
+              <a class="page-link" href="?{{ trade_query }}{% if trade_query %}&{% endif %}trade_page={{ trade_page.previous_page_number }}">
+                &laquo; Prev
+              </a>
             </li>
           {% endif %}
-          <li class="page-item disabled"><span class="page-link">Page {{ trade_page.number }} of {{ trade_page.paginator.num_pages }}</span></li>
+
+          <li class="page-item disabled">
+            <span class="page-link">
+              Page {{ trade_page.number }} of {{ trade_page.paginator.num_pages }}
+            </span>
+          </li>
+
           {% if trade_page.has_next %}
             <li class="page-item">
-              <a class="page-link" href="?trade_page={{ trade_page.next_page_number }}">Next &raquo;</a>
+              <a class="page-link" href="?{{ trade_query }}{% if trade_query %}&{% endif %}trade_page={{ trade_page.next_page_number }}">
+                Next &raquo;
+              </a>
             </li>
           {% endif %}
         </ul>
       </nav>
       {% endif %}
     {% else %}
-      <div class="text-muted">No trades to display yet.</div>
+      <div class="empty-state px-0 pb-0">
+        <p class="section-subcopy mb-0">No trades to display yet.</p>
+      </div>
     {% endif %}
   </div>
+</section>
 
-  <!-- Uploaded Files -->
-  <div class="card p-3">
-    <h5 class="mb-2">Your Uploaded Files</h5>
+<section>
+  <div class="surface-card section-card">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+      <div>
+        <h2 class="section-heading mb-1">Uploaded data history</h2>
+        <p class="section-subcopy mb-0">
+          Re-open previously uploaded files to continue the review workflow.
+        </p>
+      </div>
+    </div>
+
+    <form method="get" class="app-filter-bar mb-3">
+      <input type="hidden" name="start_date" value="{{ request.GET.start_date }}">
+      <input type="hidden" name="end_date" value="{{ request.GET.end_date }}">
+      <input type="hidden" name="symbol" value="{{ request.GET.symbol }}">
+      <input type="hidden" name="q" value="{{ trade_q }}">
+
+      <div class="row g-3 w-100">
+        <div class="col-md-5">
+          <label class="form-label">File search</label>
+          <input
+            type="text"
+            name="file_q"
+            value="{{ file_q }}"
+            class="form-control"
+            placeholder="Filename..."
+          >
+        </div>
+
+        <div class="col-md-4">
+          <label class="form-label">Status</label>
+          <select name="file_status" class="form-select">
+            <option value="">All statuses</option>
+            <option value="pending" {% if file_status == "pending" %}selected{% endif %}>Pending</option>
+            <option value="processed" {% if file_status == "processed" %}selected{% endif %}>Processed</option>
+            <option value="error" {% if file_status == "error" %}selected{% endif %}>Error</option>
+          </select>
+        </div>
+
+        <div class="col-md-3 d-flex align-items-end">
+          <button class="btn btn-dark w-100" type="submit">
+            <i class="bi bi-funnel me-2"></i>Filter Files
+          </button>
+        </div>
+      </div>
+    </form>
+
     {% if files and files.object_list %}
-      <div class="list-group">
+      <div class="list-group list-group-flush">
         {% for f in files %}
-          <div class="list-group-item d-flex justify-content-between align-items-center">
+          <div class="list-group-item px-0 d-flex justify-content-between align-items-center flex-wrap gap-3">
             <div>
               <div class="fw-semibold">{{ f.file.name|slice:'-50:' }}</div>
-              <small class="text-muted">Uploaded: {{ f.uploaded_at|date:"Y-m-d H:i" }} | Status: {{ f.status }}</small>
+              <small class="text-muted">
+                Uploaded: {{ f.uploaded_at|date:"Y-m-d H:i" }} | Status: {{ f.status }}
+              </small>
             </div>
+
             <div class="d-flex gap-2">
-              <a href="{% url 'performance:load_file' f.id %}" class="btn btn-sm btn-outline-primary">
-                <i class="bi bi-arrow-repeat"></i> Load
+              <a href="{% url 'performance:load_file' f.id %}" class="btn btn-sm btn-soft">
+                <i class="bi bi-arrow-repeat me-1"></i>Load
               </a>
+
               {% if user.is_staff %}
               <a href="{% url 'performance:admin_delete_file' f.id %}" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-trash"></i> Delete
+                <i class="bi bi-trash me-1"></i>Delete
               </a>
               {% endif %}
             </div>
@@ -164,25 +336,40 @@
         {% endfor %}
       </div>
 
-      <!-- Files pagination -->
       {% if files.paginator.num_pages > 1 %}
-      <nav class="mt-2">
+      <nav class="mt-3">
         <ul class="pagination pagination-sm mb-0">
           {% if files.has_previous %}
-            <li class="page-item"><a class="page-link" href="?page={{ files.previous_page_number }}">&laquo;</a></li>
+            <li class="page-item">
+              <a class="page-link" href="?{{ files_query }}{% if files_query %}&{% endif %}page={{ files.previous_page_number }}">
+                &laquo;
+              </a>
+            </li>
           {% endif %}
-          <li class="page-item disabled"><span class="page-link">Page {{ files.number }} of {{ files.paginator.num_pages }}</span></li>
+
+          <li class="page-item disabled">
+            <span class="page-link">
+              Page {{ files.number }} of {{ files.paginator.num_pages }}
+            </span>
+          </li>
+
           {% if files.has_next %}
-            <li class="page-item"><a class="page-link" href="?page={{ files.next_page_number }}">&raquo;</a></li>
+            <li class="page-item">
+              <a class="page-link" href="?{{ files_query }}{% if files_query %}&{% endif %}page={{ files.next_page_number }}">
+                &raquo;
+              </a>
+            </li>
           {% endif %}
         </ul>
       </nav>
       {% endif %}
-
     {% else %}
-      <div class="text-muted">No files uploaded yet. Start with the <a href="{% url 'performance:upload_file' %}">Upload page</a>.</div>
+      <div class="empty-state px-0 pb-0">
+        <p class="section-subcopy mb-0">
+          No files uploaded yet. Start with the <a href="{% url 'performance:upload_file' %}">Upload page</a>.
+        </p>
+      </div>
     {% endif %}
   </div>
-
-</div>
+</section>
 {% endblock %}

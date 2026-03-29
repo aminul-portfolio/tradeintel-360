@@ -1,52 +1,167 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block title %}Admin Files | TradeIntel 360{% endblock %}
+
 {% block content %}
-<div class="container py-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 fw-bold text-primary">
-      <i class="bi bi-folder-symlink"></i> All Uploaded Files
-    </h1>
-    <a href="{% url 'performance:dashboard' %}" class="btn btn-secondary">
-      <i class="bi bi-arrow-left"></i> Back to Dashboard
-    </a>
+{% include "partials/page_header.html" with eyebrow="Admin surface" eyebrow_icon="bi-folder-symlink" title="All uploaded files" copy="Review uploaded files across users, filter by filename or processing status, and manage file-level actions from one controlled admin surface." %}
+
+<div class="surface-card section-card mb-4">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+    <div>
+      <h2 class="section-heading mb-1">Admin filters</h2>
+      <p class="section-subcopy mb-0">
+        Narrow the file table by filename and status before loading or deleting records.
+      </p>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+        <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+      </a>
+      <a href="{% url 'performance:admin_all_files' %}" class="btn btn-dark">
+        <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+      </a>
+    </div>
   </div>
 
-  <div class="table-responsive">
-    <table class="table table-hover table-bordered align-middle">
-      <thead class="table-dark">
-        <tr>
-          <th>User</th>
-          <th>Filename</th>
-          <th>Uploaded At</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for file in all_files %}
-        <tr>
-          <td>{{ file.user.username }}</td>
-          <td>{{ file.file.name }}</td>
-          <td>{{ file.uploaded_at|date:"Y-m-d H:i" }}</td>
-          <td>
-            <div class="d-flex gap-2">
-              <a href="{% url 'performance:load_file' file.id %}" class="btn btn-sm btn-primary">
-                <i class="bi bi-cloud-download"></i> Load
-              </a>
-              <a href="{% url 'performance:admin_delete_file' file.id %}" class="btn btn-sm btn-danger"
-                 onclick="return confirm('Delete this file?');">
-                <i class="bi bi-trash"></i> Delete
-              </a>
-            </div>
-          </td>
-        </tr>
-        {% empty %}
-        <tr>
-          <td colspan="4" class="text-center text-muted">No files uploaded yet.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <form method="get" class="app-filter-bar">
+    <div class="row g-3 w-100">
+      <div class="col-md-6">
+        <label class="form-label">File search</label>
+        <input
+          type="text"
+          name="file_q"
+          value="{{ file_q }}"
+          class="form-control"
+          placeholder="Filename or partial match..."
+        >
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select">
+          <option value="">All statuses</option>
+          <option value="pending" {% if status == "pending" %}selected{% endif %}>Pending</option>
+          <option value="processed" {% if status == "processed" %}selected{% endif %}>Processed</option>
+          <option value="error" {% if status == "error" %}selected{% endif %}>Error</option>
+        </select>
+      </div>
+
+      <div class="col-md-3 d-flex align-items-end">
+        <button class="btn btn-primary w-100" type="submit">
+          <i class="bi bi-funnel me-2"></i>Apply Filters
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card section-card">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h2 class="section-heading mb-1">Uploaded files table</h2>
+      <p class="section-subcopy mb-0">
+        Admin-level view of uploaded trading files and processing history.
+      </p>
+    </div>
+
+    {% if all_files %}
+    <span class="signal-badge">
+      <i class="bi bi-table me-1"></i>
+      Page {{ all_files.number|default:1 }} of {{ all_files.paginator.num_pages|default:1 }}
+    </span>
+    {% endif %}
   </div>
+
+  {% if all_files and all_files.object_list %}
+    <div class="table-shell">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Filename</th>
+              <th>Status</th>
+              <th>Uploaded At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file in all_files %}
+            <tr>
+              <td class="fw-semibold">{{ file.user.username }}</td>
+              <td>{{ file.file.name }}</td>
+              <td>
+                {% if file.status == "processed" %}
+                  <span class="badge text-bg-success">Processed</span>
+                {% elif file.status == "pending" %}
+                  <span class="badge text-bg-warning">Pending</span>
+                {% elif file.status == "error" %}
+                  <span class="badge text-bg-danger">Error</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">{{ file.status }}</span>
+                {% endif %}
+              </td>
+              <td>{{ file.uploaded_at|date:"Y-m-d H:i" }}</td>
+              <td>
+                <div class="d-flex flex-wrap gap-2">
+                  <a href="{% url 'performance:load_file' file.id %}" class="btn btn-sm btn-soft">
+                    <i class="bi bi-arrow-repeat me-1"></i>Load
+                  </a>
+                  <a
+                    href="{% url 'performance:admin_delete_file' file.id %}"
+                    class="btn btn-sm btn-outline-danger"
+                    onclick="return confirm('Delete this file?');"
+                  >
+                    <i class="bi bi-trash me-1"></i>Delete
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if all_files.paginator.num_pages > 1 %}
+    <nav class="mt-3">
+      <ul class="pagination pagination-sm mb-0">
+        {% if all_files.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?{{ files_query }}{% if files_query %}&{% endif %}page={{ all_files.previous_page_number }}">
+              &laquo; Prev
+            </a>
+          </li>
+        {% endif %}
+
+        <li class="page-item disabled">
+          <span class="page-link">
+            Page {{ all_files.number }} of {{ all_files.paginator.num_pages }}
+          </span>
+        </li>
+
+        {% if all_files.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?{{ files_query }}{% if files_query %}&{% endif %}page={{ all_files.next_page_number }}">
+              Next &raquo;
+            </a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state__icon">
+        <i class="bi bi-folder2-open"></i>
+      </div>
+      <h2 class="section-heading mb-2">No uploaded files found</h2>
+      <p class="section-subcopy mb-0">
+        No files matched the current admin filter set, or no uploads exist yet.
+      </p>
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

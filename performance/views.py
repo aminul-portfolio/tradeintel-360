@@ -1,6 +1,5 @@
 # performance/views.py
 import csv
-import io
 import os
 from io import BytesIO, StringIO
 
@@ -20,8 +19,72 @@ from xhtml2pdf import pisa
 
 from .forms import FilterForm, TradingFileForm
 from .models import TradingFile
-from .utils import compute_kpis  # uses your current KPI function
+from .utils import compute_kpis
 
+
+# ---------- Small helpers ----------
+
+def _query_without(request, *keys):
+    q = request.GET.copy()
+    for key in keys:
+        q.pop(key, None)
+    return q.urlencode()
+
+
+def _smart_filter_df(df: pd.DataFrame, q: str) -> pd.DataFrame:
+    """
+    Smart filter across common text, numeric, and date-like fields.
+    Supports searches like:
+    - XAUUSD
+    - buy
+    - breakout
+    - 100
+    - 2025-07
+    """
+    if df is None or df.empty or not q:
+        return df
+
+    q = str(q).strip()
+    if not q:
+        return df
+
+    mask = pd.Series(False, index=df.index)
+
+    preferred_text_cols = [
+        "Symbol", "Type", "Side", "Tag", "Tags", "Notes",
+        "Comment", "Comments", "Strategy", "Reason"
+    ]
+
+    text_cols = [c for c in preferred_text_cols if c in df.columns]
+    if not text_cols:
+        text_cols = list(df.select_dtypes(include=["object"]).columns)
+
+    for col in text_cols:
+        mask |= df[col].astype(str).str.contains(q, case=False, na=False)
+
+    try:
+        q_num = float(str(q).replace(",", ""))
+    except ValueError:
+        q_num = None
+
+    if q_num is not None:
+        numeric_cols = [
+            c for c in ["Profit", "Commission", "Swap", "Balance", "Pips", "Size", "Volume"]
+            if c in df.columns
+        ]
+        for col in numeric_cols:
+            mask |= pd.to_numeric(df[col], errors="coerce").round(8).eq(q_num)
+
+    for date_col in ["Open", "Open Time", "Date"]:
+        if date_col in df.columns:
+            date_series = pd.to_datetime(df[date_col], errors="coerce")
+            mask |= date_series.dt.strftime("%Y-%m-%d").fillna("").str.contains(q, case=False, na=False)
+            mask |= date_series.dt.strftime("%Y-%m").fillna("").str.contains(q, case=False, na=False)
+
+    return df[mask]
+
+
+# ---------- Main views ----------
 
 @login_required
 def dashboard(request):
@@ -31,7 +94,6 @@ def dashboard(request):
     """
     cleaned_data = request.session.get("cleaned_data")
 
-    # placeholders
     df_html = None
     kpis = None
     chart_equity = None
@@ -42,17 +104,19 @@ def dashboard(request):
     chart_pie_sections = {}
 
     filter_form = FilterForm(request.GET or None)
+    trade_q = request.GET.get("q", "").strip()
+    file_q = request.GET.get("file_q", "").strip()
+    file_status = request.GET.get("file_status", "").strip()
 
     if cleaned_data:
         df = pd.read_json(StringIO(cleaned_data), orient="split")
 
-        # Apply filters (date + symbol) based on your FilterForm
+        # Apply form filters
         if filter_form.is_valid():
             start_date = filter_form.cleaned_data.get("start_date")
             end_date = filter_form.cleaned_data.get("end_date")
             symbol = filter_form.cleaned_data.get("symbol")
 
-            # try to parse a date column
             for date_col in ["Open", "Open Time", "Date"]:
                 if date_col in df.columns:
                     df[date_col] = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True)
@@ -63,24 +127,27 @@ def dashboard(request):
                     break
 
             if "Symbol" in df.columns and symbol:
-                df = df[df["Symbol"].str.contains(symbol, case=False, na=False)]
+                df = df[df["Symbol"].astype(str).str.contains(symbol, case=False, na=False)]
+
+        # Smart filter
+        if trade_q:
+            df = _smart_filter_df(df, trade_q)
 
         # Paginated trade table
         trade_paginator = Paginator(df.to_dict("records"), 10)
         trade_page_number = request.GET.get("trade_page")
         trade_page = trade_paginator.get_page(trade_page_number)
         df_page = pd.DataFrame(trade_page.object_list)
-        df_html = df_page.to_html(classes="table table-striped", index=False) if not df_page.empty else None
+        df_html = df_page.to_html(classes="table table-striped align-middle", index=False) if not df_page.empty else None
 
-        # KPIs (your current utils.compute_kpis)
+        # KPIs
         try:
             kpis = compute_kpis(df)
         except Exception:
             kpis = None
 
-        # Charts if Profit exists
+        # Charts
         if "Profit" in df.columns:
-            # Identify any parsed datetime column for monthly grouping
             maybe_date = None
             for col in ["Open", "Open Time", "Date"]:
                 if col in df.columns and pd.api.types.is_datetime64_any_dtype(df[col]):
@@ -101,8 +168,8 @@ def dashboard(request):
                         output_type="div",
                     )
 
-            # Equity curve
-            df["Cumulative Profit"] = df["Profit"].cumsum()
+            df["Cumulative Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0).cumsum()
+
             chart_equity = opy.plot(
                 go.Figure(
                     data=[go.Scatter(x=list(range(len(df))), y=df["Cumulative Profit"], mode="lines")],
@@ -111,7 +178,7 @@ def dashboard(request):
                 auto_open=False,
                 output_type="div",
             )
-            # Profit per trade
+
             chart_profit = opy.plot(
                 go.Figure(
                     data=[go.Bar(x=list(range(len(df))), y=df["Profit"])],
@@ -120,7 +187,7 @@ def dashboard(request):
                 auto_open=False,
                 output_type="div",
             )
-            # Histogram
+
             chart_hist = opy.plot(
                 go.Figure(
                     data=[go.Histogram(x=df["Profit"], nbinsx=30)],
@@ -130,7 +197,6 @@ def dashboard(request):
                 output_type="div",
             )
 
-            # Optional pies by Type if available
             sections = [("Overall", df)]
             if "Type" in df.columns:
                 sections.extend([
@@ -142,35 +208,57 @@ def dashboard(request):
                 return opy.plot(
                     go.Figure(
                         data=[go.Pie(
-                            labels=labels, values=values, hole=0.4,
-                            hoverinfo="label+percent+value", textinfo="percent",
+                            labels=labels,
+                            values=values,
+                            hole=0.4,
+                            hoverinfo="label+percent+value",
+                            textinfo="percent",
                             marker=dict(colors=colors),
                         )],
                         layout=go.Layout(
-                            title=title, width=370, height=600,
+                            title=title,
+                            width=370,
+                            height=600,
                             margin=dict(t=50, b=120),
                             legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.3),
                         ),
                     ),
-                    auto_open=False, output_type="div",
+                    auto_open=False,
+                    output_type="div",
                 )
 
             for label, d in sections:
                 if d.empty or "Profit" not in d.columns or "Symbol" not in d.columns:
                     continue
-                # Win/Loss counts per symbol
+
                 win_loss = d.groupby("Symbol")["Profit"].apply(
-                    lambda x: pd.Series({"Wins": (x > 0).sum(), "Losses": (x <= 0).sum()})
+                    lambda x: pd.Series({
+                        "Wins": (x > 0).sum(),
+                        "Losses": (x <= 0).sum(),
+                    })
                 ).unstack().fillna(0)
+
+                wins = list(win_loss["Wins"]) if "Wins" in win_loss.columns else []
+                losses = list(win_loss["Losses"]) if "Losses" in win_loss.columns else []
+
                 chart_pie_sections[f"{label.lower()}_count"] = build_pie(
                     f"{label} Win/Loss Count by Pair",
                     labels=[f"{s} Wins" for s in win_loss.index] + [f"{s} Losses" for s in win_loss.index],
-                    values=list(win_loss.get("Wins", pd.Series())) + list(win_loss.get("Losses", pd.Series())),
+                    values=wins + losses,
                     colors=px.colors.qualitative.Set3,
                 )
 
-    # Files uploaded by the user (paginate 5 per page)
+    trade_query = _query_without(request, "trade_page")
+    files_query = _query_without(request, "page")
+
     files_qs = TradingFile.objects.filter(user=request.user).order_by("-uploaded_at")
+
+    if file_q:
+        files_qs = files_qs.filter(file__icontains=file_q)
+
+    if file_status:
+        files_qs = files_qs.filter(status__iexact=file_status)
+
     files = Paginator(files_qs, 5).get_page(request.GET.get("page"))
 
     return render(request, "performance/dashboard.html", {
@@ -184,6 +272,11 @@ def dashboard(request):
         "filter_form": filter_form,
         "files": files,
         "trade_page": trade_page,
+        "trade_q": trade_q,
+        "file_q": file_q,
+        "file_status": file_status,
+        "trade_query": trade_query,
+        "files_query": files_query,
     })
 
 
@@ -199,6 +292,7 @@ def upload_file(request):
             trading_file.user = request.user
             trading_file.status = "pending"
             trading_file.save()
+
             try:
                 df = clean_ftmo_csv(trading_file.file.path)
                 request.session["last_uploaded_file"] = trading_file.file.name
@@ -217,13 +311,36 @@ def upload_file(request):
                 trading_file.save(update_fields=["status"])
     else:
         form = TradingFileForm()
+
     return render(request, "performance/upload_file.html", {"form": form})
 
 
 @staff_member_required
 def admin_all_files(request):
-    all_files = TradingFile.objects.select_related("user").order_by("-uploaded_at")
-    return render(request, "performance/admin_files.html", {"all_files": all_files})
+    file_q = request.GET.get("file_q", "").strip()
+    status = request.GET.get("status", "").strip()
+
+    all_files_qs = TradingFile.objects.select_related("user").order_by("-uploaded_at")
+
+    if file_q:
+        all_files_qs = all_files_qs.filter(file__icontains=file_q)
+
+    if status:
+        all_files_qs = all_files_qs.filter(status__iexact=status)
+
+    all_files = Paginator(all_files_qs, 15).get_page(request.GET.get("page"))
+    files_query = _query_without(request, "page")
+
+    return render(
+        request,
+        "performance/admin_files.html",
+        {
+            "all_files": all_files,
+            "file_q": file_q,
+            "status": status,
+            "files_query": files_query,
+        },
+    )
 
 
 @staff_member_required
@@ -251,8 +368,10 @@ def download_cleaned_csv(request):
     cleaned_data = request.session.get("cleaned_data")
     if not cleaned_data:
         return HttpResponse("No data to download.", status=400)
-    df = pd.read_json(cleaned_data, orient="split")
+
+    df = pd.read_json(StringIO(cleaned_data), orient="split")
     csv_content = df.to_csv(index=False)
+
     response = HttpResponse(csv_content, content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="cleaned_trading_data.csv"'
     return response
@@ -263,13 +382,17 @@ def download_excel(request):
     cleaned_data = request.session.get("cleaned_data")
     if not cleaned_data:
         return HttpResponse("No data to export.", status=400)
+
     df = pd.read_json(StringIO(cleaned_data), orient="split")
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    output = BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Trades")
+
     output.seek(0)
+
     response = HttpResponse(
-        output,
+        output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="trades.xlsx"'
@@ -281,99 +404,295 @@ def download_pdf(request):
     cleaned_data = request.session.get("cleaned_data")
     if not cleaned_data:
         return HttpResponse("No data available.", status=400)
-    df = pd.read_json(StringIO(cleaned_data), orient="split")
-    kpis = compute_kpis(df) if df is not None else {}
+
+    try:
+        df = pd.read_json(StringIO(cleaned_data), orient="split")
+    except Exception as e:
+        return HttpResponse(f"Error reading cleaned session data: {e}", status=500)
+
+    # Trade-like schema check
+    trade_like_markers = ["Open", "Open Time", "Date", "Symbol", "Type", "Side", "Profit"]
+    is_trade_like = any(col in df.columns for col in trade_like_markers)
+
+    try:
+        kpis = compute_kpis(df) if is_trade_like and df is not None else {}
+    except Exception:
+        kpis = {}
+
+    def choose_report_columns(pdf_df: pd.DataFrame) -> list[str]:
+        preferred_trade_cols = [
+            "Open Time", "Open", "Date", "Symbol", "Type", "Side",
+            "Size", "Volume", "Profit", "Commission", "Swap", "Balance", "Pips"
+        ]
+        present_trade_cols = [c for c in preferred_trade_cols if c in pdf_df.columns]
+        if present_trade_cols:
+            return present_trade_cols[:8]
+
+        excluded_keywords = [
+            "shipping", "address", "line1", "line2", "city", "postcode", "country",
+            "stripe", "intent", "charge", "refund", "email"
+        ]
+        compact_cols = [
+            c for c in pdf_df.columns
+            if not any(word in c.lower() for word in excluded_keywords)
+        ]
+
+        if compact_cols:
+            return compact_cols[:8]
+
+        return list(pdf_df.columns[:8])
+
+    if df is not None and not df.empty:
+        pdf_df = df.copy()
+
+        for col in pdf_df.columns:
+            if pd.api.types.is_datetime64_any_dtype(pdf_df[col]):
+                pdf_df[col] = pdf_df[col].dt.strftime("%Y-%m-%d %H:%M").fillna("")
+            elif pd.api.types.is_numeric_dtype(pdf_df[col]):
+                pdf_df[col] = pd.to_numeric(pdf_df[col], errors="coerce").round(2)
+
+        pdf_df = pdf_df.fillna("")
+
+        report_columns = choose_report_columns(pdf_df)
+        preview_df = pdf_df[report_columns].head(25)
+
+        trade_columns = [str(col) for col in preview_df.columns.tolist()]
+        trade_rows = preview_df.astype(str).values.tolist()
+        has_trades = len(trade_rows) > 0
+        total_trade_rows = len(pdf_df)
+        displayed_trade_rows = len(trade_rows)
+    else:
+        trade_columns = []
+        trade_rows = []
+        has_trades = False
+        total_trade_rows = 0
+        displayed_trade_rows = 0
+
     template = get_template("performance/pdf_report.html")
-    html = template.render({"user": request.user, "kpis": kpis, "df": df, "now": timezone.now()})
+    html = template.render(
+        {
+            "user": request.user,
+            "kpis": kpis,
+            "trade_columns": trade_columns,
+            "trade_rows": trade_rows,
+            "has_trades": has_trades,
+            "total_trade_rows": total_trade_rows,
+            "displayed_trade_rows": displayed_trade_rows,
+            "is_trade_like": is_trade_like,
+            "now": timezone.now(),
+        }
+    )
+
     response = HttpResponse(content_type="application/pdf")
     response["Content-Disposition"] = 'attachment; filename="trading_report.pdf"'
-    pisa_status = pisa.CreatePDF(html, dest=response)
+
+    try:
+        pisa_status = pisa.CreatePDF(html, dest=response)
+    except Exception as e:
+        return HttpResponse(f"PDF generation exception: {e}", status=500)
+
     if pisa_status.err:
         return HttpResponse("Error generating PDF", status=500)
-    return response
 
+    return response
 
 @login_required
 def kpi_report(request):
     cleaned_data = request.session.get("cleaned_data")
     df = pd.read_json(StringIO(cleaned_data), orient="split") if cleaned_data else None
     kpis = compute_kpis(df) if df is not None else None
-    return render(request, "performance/kpi_report.html", {"kpis": kpis})
+
+    kpi_rows = [{"metric": k, "value": v} for k, v in (kpis or {}).items()]
+    kpi_q = request.GET.get("kpi_q", "").strip()
+
+    if kpi_q:
+        kpi_rows = [
+            row for row in kpi_rows
+            if kpi_q.lower() in str(row["metric"]).lower()
+            or kpi_q.lower() in str(row["value"]).lower()
+        ]
+
+    kpi_page = Paginator(kpi_rows, 10).get_page(request.GET.get("kpi_page"))
+    kpi_query = _query_without(request, "kpi_page")
+
+    return render(
+        request,
+        "performance/kpi_report.html",
+        {
+            "kpis": kpis,
+            "kpi_page": kpi_page,
+            "kpi_q": kpi_q,
+            "kpi_query": kpi_query,
+            "generated_at": timezone.now(),
+        },
+    )
 
 
 @login_required
 def export_excel(request):
     """
     Renders the Excel export UI (GET) and downloads Excel when `download=1`.
-    Uses dummy rows for now (replace with DB queries later).
+
+    Uses the currently loaded cleaned session dataset instead of dummy rows.
+    Applies filters to the loaded data and optionally includes a KPI sheet
+    based on real computed outputs.
     """
+    cleaned_data = request.session.get("cleaned_data")
+
+    fallback_columns = [
+        "entry_time", "exit_time", "symbol", "side", "qty",
+        "entry", "exit", "sl", "tp", "pnl", "rr", "tag", "notes"
+    ]
+
+    df = None
+    if cleaned_data:
+        try:
+            df = pd.read_json(StringIO(cleaned_data), orient="split")
+            df.columns = [str(c).strip() for c in df.columns]
+        except Exception:
+            df = None
+
+    def first_present(columns, candidates):
+        for col in candidates:
+            if col in columns:
+                return col
+        return None
+
+    def get_available_columns(dataframe):
+        if dataframe is None or dataframe.empty:
+            return fallback_columns
+
+        preferred = [
+            "Open Time", "Open", "Date", "Close Time",
+            "Symbol", "Type", "Side",
+            "Size", "Volume", "Entry", "Exit",
+            "Profit", "Commission", "Swap", "Balance",
+            "Pips", "SL", "TP", "RR", "rr",
+            "Tag", "Tags", "Notes", "Comment", "Comments"
+        ]
+        present_preferred = [c for c in preferred if c in dataframe.columns]
+        return present_preferred if present_preferred else list(dataframe.columns)
+
+    available_columns = get_available_columns(df)
+    selected_cols = request.GET.getlist("cols") if request.GET.getlist("cols") else available_columns
+
     if "download" not in request.GET:
-        columns = "entry_time,exit_time,symbol,side,qty,entry,exit,sl,tp,pnl,rr,tag,notes".split(",")
-        selected_cols = request.GET.getlist("cols") if request.GET.getlist("cols") else columns
         return render(
             request,
             "performance/excel_export.html",
             {
-                "columns": columns,
+                "columns": available_columns,
                 "selected_cols": selected_cols,
-            }
+                "data_ready": bool(df is not None and not df.empty),
+                "available_rows": len(df) if df is not None else 0,
+            },
         )
 
-    symbol = request.GET.get("symbol") or None
-    min_rr = request.GET.get("min_rr") or None
-    cols = request.GET.getlist("cols") or [
-        "entry_time", "exit_time", "symbol", "side", "qty", "entry", "exit", "pnl", "rr", "tag", "notes"
-    ]
+    if df is None or df.empty:
+        return HttpResponse(
+            "No cleaned session data is available. Upload a trade history file first.",
+            status=400,
+        )
+
+    working_df = df.copy()
+
+    # Parse likely date columns
+    date_candidates = ["Open Time", "Open", "Date", "entry_time", "exit_time", "created_at", "updated_at"]
+    date_col = first_present(working_df.columns, date_candidates)
+    if date_col:
+        working_df[date_col] = pd.to_datetime(working_df[date_col], errors="coerce")
+
+    # Apply filters
+    start_date = (request.GET.get("start_date") or "").strip()
+    end_date = (request.GET.get("end_date") or "").strip()
+    symbol = (request.GET.get("symbol") or "").strip()
+    min_rr = (request.GET.get("min_rr") or "").strip()
     include_kpis = "include_kpis" in request.GET
 
-    rows = [
-        {"entry_time": "2025-07-01 09:00", "exit_time": "2025-07-01 11:00", "symbol": "XAUUSD", "side": "LONG",
-         "qty": 1.0, "entry": 2350.0, "exit": 2360.0, "pnl": 100.0, "rr": 2.0, "tag": "Breakout", "notes": ""},
-        {"entry_time": "2025-07-02 10:00", "exit_time": "2025-07-02 12:30", "symbol": "BTCUSD", "side": "SHORT",
-         "qty": 0.2, "entry": 64000.0, "exit": 63500.0, "pnl": 100.0, "rr": 1.8, "tag": "Trend", "notes": "Nice move"},
-    ]
+    if date_col:
+        if start_date:
+            working_df = working_df[working_df[date_col] >= pd.to_datetime(start_date, errors="coerce")]
+        if end_date:
+            working_df = working_df[working_df[date_col] <= pd.to_datetime(end_date, errors="coerce")]
 
-    def passes_filters(r):
-        if symbol and symbol.strip().upper() not in r["symbol"].upper():
-            return False
-        if min_rr:
-            try:
-                if float(r["rr"]) < float(min_rr):
-                    return False
-            except ValueError:
-                pass
-        return True
+    symbol_col = first_present(working_df.columns, ["Symbol", "symbol"])
+    if symbol and symbol_col:
+        working_df = working_df[
+            working_df[symbol_col].astype(str).str.contains(symbol, case=False, na=False)
+        ]
 
-    filtered = [{k: v for k, v in r.items() if k in cols} for r in rows if passes_filters(r)]
+    rr_col = first_present(working_df.columns, ["RR", "rr", "R:R", "risk_reward", "Risk Reward"])
+    if min_rr and rr_col:
+        try:
+            min_rr_value = float(min_rr)
+            working_df[rr_col] = pd.to_numeric(working_df[rr_col], errors="coerce")
+            working_df = working_df[working_df[rr_col] >= min_rr_value]
+        except ValueError:
+            pass
+
+    # Keep only selected columns that actually exist
+    selected_cols = [c for c in request.GET.getlist("cols") if c in working_df.columns]
+    if not selected_cols:
+        selected_cols = [c for c in available_columns if c in working_df.columns]
+    if not selected_cols:
+        selected_cols = list(working_df.columns)
+
+    export_df = working_df[selected_cols].copy()
+
+    # Format datetime columns for Excel readability
+    for col in export_df.columns:
+        if pd.api.types.is_datetime64_any_dtype(export_df[col]):
+            export_df[col] = export_df[col].dt.strftime("%Y-%m-%d %H:%M")
+
+    export_df = export_df.fillna("")
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df = pd.DataFrame(filtered) if filtered else pd.DataFrame(columns=cols)
-        df.to_excel(writer, index=False, sheet_name="Trades")
+        export_df.to_excel(writer, index=False, sheet_name="Trades")
+
+        meta_rows = [
+            {"Field": "Generated At", "Value": timezone.now().strftime("%Y-%m-%d %H:%M:%S")},
+            {"Field": "Source Rows", "Value": len(df)},
+            {"Field": "Exported Rows", "Value": len(export_df)},
+            {"Field": "Date Filter Column", "Value": date_col or "Not available"},
+            {"Field": "Symbol Filter", "Value": symbol or "Not set"},
+            {"Field": "Min RR Filter", "Value": min_rr or "Not set"},
+        ]
+        pd.DataFrame(meta_rows).to_excel(writer, index=False, sheet_name="ExportMeta")
 
         if include_kpis:
-            kpi_data = [
-                {"Metric": "Win Rate", "Value": "—"},
-                {"Metric": "Sharpe Ratio", "Value": "—"},
-                {"Metric": "Max Drawdown", "Value": "—"},
-                {"Metric": "Profit Factor", "Value": "—"},
-            ]
-            pd.DataFrame(kpi_data).to_excel(writer, index=False, sheet_name="KPIs")
+            try:
+                kpis = compute_kpis(working_df) if not working_df.empty else {}
+            except Exception:
+                kpis = {}
+
+            if kpis:
+                kpi_rows = [{"Metric": key, "Value": value} for key, value in kpis.items()]
+            else:
+                kpi_rows = [
+                    {
+                        "Metric": "Info",
+                        "Value": "No KPI values available for the current filtered dataset."
+                    }
+                ]
+
+            pd.DataFrame(kpi_rows).to_excel(writer, index=False, sheet_name="KPIs")
 
     output.seek(0)
+
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M")
     response = HttpResponse(
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    response["Content-Disposition"] = 'attachment; filename="tradeintel_report.xlsx"'
+    response["Content-Disposition"] = f'attachment; filename="tradeintel_report_{timestamp}.xlsx"'
     return response
-
 
 def project_one_plan(request):
     return render(request, "performance/project_one_plan.html")
 
 
-# ---------- Helpers ----------
+# ---------- File cleaning helper ----------
 
 def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
     """
@@ -384,9 +703,11 @@ def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
 
     if ext in [".xlsx", ".xls"]:
         df = pd.read_excel(file_path)
+
     elif ext == ".csv":
         encodings = ["utf-8", "ISO-8859-1"]
         delimiter = ","
+
         with open(file_path, "r", encoding=encodings[0], errors="ignore") as f:
             sample = f.read(2048)
             try:
@@ -394,35 +715,31 @@ def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
                 delimiter = dialect.delimiter
             except csv.Error:
                 delimiter = ","
+
+        df = None
         for enc in encodings:
             try:
                 df = pd.read_csv(file_path, encoding=enc, delimiter=delimiter, on_bad_lines="skip")
                 break
             except UnicodeDecodeError:
                 continue
+
+        if df is None:
+            raise ValueError("Unable to read the CSV file with supported encodings.")
+
     else:
         raise ValueError("Unsupported file format. Please upload a CSV or Excel file.")
 
     df.dropna(how="all", inplace=True)
     df.columns = [c.strip() for c in df.columns]
 
-    # parse common date columns
     for date_col in ["Open Time", "Open", "Date"]:
         if date_col in df.columns:
             df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
             break
 
-    # numeric
     for col in ["Size", "Profit", "Commission", "Swap", "Balance", "Pips", "Volume"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     return df
-from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
-from .models import TradingFile  # Replace with your actual file model
-
-@login_required
-def admin_all_files(request):
-    all_files = TradingFile.objects.all().order_by('-uploaded_at')
-    return render(request, "performance/admin_files.html", {"all_files": all_files})

@@ -1,63 +1,202 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Trading Journal{% endblock %}
+{% block title %}Home - TradeIntel 360{% endblock %}
+
+{% block extra_css %}{% endblock %}
 
 {% block content %}
-<div class="text-center mb-5">
-  <h1 class="display-4 fw-bold">Welcome to Your Trading Journal</h1>
-  <p class="lead text-muted">
-    Upload your trading data, analyze performance, and generate professional reports.
-  </p>
-</div>
+<section class="home-shell">
+  <div class="hero-panel p-4 p-lg-5">
+    <div class="hero-content text-center">
+      <span class="eyebrow">
+        <i class="bi bi-graph-up-arrow"></i>
+        TradeIntel 360
+      </span>
 
-<div class="row g-4">
-  <div class="col-md-4">
-    <div class="card feature-card h-100 text-center">
-      <div class="card-body">
-        <i class="bi bi-upload display-4 text-primary"></i>
-        <h5 class="card-title mt-3">Upload Your Trades</h5>
-        <p class="text-muted">Import CSV or Excel files to start analyzing.</p>
-        <a href="#" class="btn btn-primary w-100">
-          <i class="bi bi-upload"></i> Upload Data
+      <h1 class="hero-title">Trading performance analytics for post-trade review and decision support</h1>
+
+      <p class="hero-copy">
+        Upload trade history, review KPI-driven performance, and generate analyst-facing reporting outputs for trading and finance workflows.
+        TradeIntel 360 is positioned around post-trade review rather than market-data ingestion, calculator utilities, or a generic trading journal.
+      </p>
+
+      <div class="hero-actions">
+        <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+          <i class="bi bi-upload me-2"></i>Upload Trade History
         </a>
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-dark">
+          <i class="bi bi-speedometer2 me-2"></i>Open Performance Dashboard
+        </a>
+        <a href="{% url 'performance:kpi_report' %}" class="btn btn-soft">
+          <i class="bi bi-bar-chart-line me-2"></i>View KPI Report
+        </a>
+      </div>
+
+      <p class="hero-note">
+        Built to support KPI review, reporting logic, and structured performance analysis from uploaded trade data.
+      </p>
+
+      <div class="signal-chip-row">
+        <span class="signal-chip"><i class="bi bi-check-circle-fill text-success"></i> KPI-driven review</span>
+        <span class="signal-chip"><i class="bi bi-check-circle-fill text-success"></i> Post-trade analytics</span>
+        <span class="signal-chip"><i class="bi bi-check-circle-fill text-success"></i> Reporting surfaces</span>
+        <span class="signal-chip"><i class="bi bi-check-circle-fill text-success"></i> Finance workflow support</span>
+      </div>
+    </div>
+
+    <div class="hero-summary">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="summary-card p-4">
+            <div class="summary-label">Primary input</div>
+            <div class="summary-value">Uploaded trade history</div>
+            <p class="summary-copy">
+              Review begins from imported trading records rather than manually curated dashboard-only examples.
+            </p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="summary-card p-4">
+            <div class="summary-label">Primary output</div>
+            <div class="summary-value">Performance KPIs and review surfaces</div>
+            <p class="summary-copy">
+              The public story is centered on performance visibility, KPI logic, and reporting-oriented analysis.
+            </p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="summary-card p-4">
+            <div class="summary-label">Portfolio role</div>
+            <div class="summary-value">Post-trade analytics product</div>
+            <p class="summary-copy">
+              Distinct from upstream market-data products and pre-trade risk planning tools elsewhere in the portfolio.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-md-4">
-    <div class="card feature-card h-100 text-center">
-      <div class="card-body">
-        <i class="bi bi-speedometer2 display-4 text-success"></i>
-        <h5 class="card-title mt-3">View Dashboard</h5>
-        <p class="text-muted">Explore KPIs, charts, and performance metrics.</p>
-        <a href="#" class="btn btn-success w-100">
-          <i class="bi bi-speedometer2"></i> Go to Dashboard
-        </a>
+  <div class="section-block">
+    <div class="mb-4 text-center">
+      <h2 class="section-heading">Core reviewer path</h2>
+      <p class="home-section-copy mx-auto">
+        The strongest review flow is upload, dashboard, and KPI report. That path keeps the project aligned to trading performance analytics and analyst-facing reporting.
+      </p>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-lg-4">
+        <div class="card premium-card h-100">
+          <div class="card-body p-4">
+            <div class="feature-icon-wrap icon-upload">
+              <i class="bi bi-upload"></i>
+            </div>
+            <div class="card-kicker">Step 1</div>
+            <h5 class="card-title">Upload trade history</h5>
+            <p class="card-text">
+              Import trade data to begin structured performance review and reporting workflows.
+            </p>
+            <ul class="feature-points">
+              <li><i class="bi bi-check2-circle"></i><span>Entry point for reviewer-led analysis</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Supports portfolio and trade review workflow</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Designed to move raw trade history into analysis surfaces</span></li>
+            </ul>
+            <a href="{% url 'performance:upload_file' %}" class="btn btn-primary w-100">
+              <i class="bi bi-upload me-2"></i>Go to Upload
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card premium-card h-100">
+          <div class="card-body p-4">
+            <div class="feature-icon-wrap icon-dashboard">
+              <i class="bi bi-speedometer2"></i>
+            </div>
+            <div class="card-kicker">Step 2</div>
+            <h5 class="card-title">Review dashboard</h5>
+            <p class="card-text">
+              Explore the main performance surface for KPI review, trend interpretation, and trade-analysis context.
+            </p>
+            <ul class="feature-points">
+              <li><i class="bi bi-check2-circle"></i><span>KPI-oriented performance review</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Analyst-facing dashboard surface</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Supports post-trade decision review</span></li>
+            </ul>
+            <a href="{% url 'performance:dashboard' %}" class="btn btn-dark w-100">
+              <i class="bi bi-speedometer2 me-2"></i>Open Dashboard
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card premium-card h-100">
+          <div class="card-body p-4">
+            <div class="feature-icon-wrap icon-report">
+              <i class="bi bi-file-earmark-text"></i>
+            </div>
+            <div class="card-kicker">Step 3</div>
+            <h5 class="card-title">Open KPI report</h5>
+            <p class="card-text">
+              Access a more report-oriented surface for summarised performance review and export-adjacent output.
+            </p>
+            <ul class="feature-points">
+              <li><i class="bi bi-check2-circle"></i><span>Reporting-led review surface</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Supports recruiter and reviewer walkthroughs</span></li>
+              <li><i class="bi bi-check2-circle"></i><span>Keeps the project story focused on analytics outputs</span></li>
+            </ul>
+            <a href="{% url 'performance:kpi_report' %}" class="btn btn-soft w-100">
+              <i class="bi bi-bar-chart-line me-2"></i>View KPI Report
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-md-4">
-    <div class="card feature-card h-100 text-center">
-      <div class="card-body">
-        <i class="bi bi-file-earmark-arrow-down display-4 text-info"></i>
-        <h5 class="card-title mt-3">Download Reports</h5>
-        <p class="text-muted">Generate PDF, Excel, and CSV reports of your trades.</p>
-        <a href="#" class="btn btn-info w-100">
-          <i class="bi bi-download"></i> View Reports
-        </a>
+  <div class="section-block">
+    <div class="workflow-strip">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="workflow-step">
+            <div class="workflow-number">1</div>
+            <h6>Import</h6>
+            <p>Bring uploaded trade records into the application so review can start from real session data rather than only static presentation pages.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="workflow-step">
+            <div class="workflow-number">2</div>
+            <h6>Analyse</h6>
+            <p>Use dashboards and KPI review surfaces to inspect performance quality, outcomes, and post-trade decision patterns.</p>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="workflow-step">
+            <div class="workflow-number">3</div>
+            <h6>Report</h6>
+            <p>Move from raw trade history to clearer reporting outputs that support finance-facing review and communication workflows.</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-{% if user.is_staff %}
-<div class="mt-5">
-  <h3>Admin Tools</h3>
-  <p class="text-muted">Manage all user uploads and files.</p>
-  <a href="#" class="btn btn-warning">
-    <i class="bi bi-gear"></i> Admin File Management
-  </a>
-</div>
-{% endif %}
+  {% if user.is_staff %}
+  <div class="section-block">
+    <div class="admin-panel p-4 p-lg-5">
+      <h3 class="h4 fw-bold">Admin file management</h3>
+      <p>
+        Staff users can manage uploaded files and supporting review inputs from the admin file management surface.
+      </p>
+      <a href="{% url 'performance:admin_all_files' %}" class="btn btn-warning">
+        <i class="bi bi-gear me-2"></i>Open Admin Files
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</section>
 {% endblock %}

@@ -1,0 +1,50 @@
+<div class="page-header mb-4">
+  <div class="page-header__inner">
+    <div class="row g-4 align-items-center">
+      <div class="col-lg-8">
+        {% if eyebrow %}
+          <div class="page-header__eyebrow">
+            {% if eyebrow_icon %}
+              <i class="bi {{ eyebrow_icon }}"></i>
+            {% endif %}
+            <span>{{ eyebrow }}</span>
+          </div>
+        {% endif %}
+
+        <h1 class="page-header__title">{{ title }}</h1>
+
+        {% if copy %}
+          <p class="page-header__copy">{{ copy }}</p>
+        {% endif %}
+
+        {% if badges %}
+          <div class="page-header__meta">
+            {% for badge in badges %}
+              <span class="signal-badge">
+                {% if badge.icon %}
+                  <i class="bi {{ badge.icon }}"></i>
+                {% endif %}
+                <span>{{ badge.label }}</span>
+              </span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if actions %}
+        <div class="col-lg-4">
+          <div class="page-header__actions justify-content-lg-end">
+            {% for action in actions %}
+              <a href="{{ action.href }}" class="btn {{ action.class|default:'btn-soft' }}">
+                {% if action.icon %}
+                  <i class="bi {{ action.icon }} me-2"></i>
+                {% endif %}
+                {{ action.label }}
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

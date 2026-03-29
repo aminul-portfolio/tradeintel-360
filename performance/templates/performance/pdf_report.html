@@ -1,86 +1,272 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>Trading Report</title>
-<style>
-  body {
-    font-family: DejaVu Sans, sans-serif;
-    font-size: 10pt;
-    margin: 20px;
-  }
-  h1, h2 {
-    text-align: center;
-    margin: 0 0 10px;
-  }
-  .kpi-list {
-    list-style: none;
-    padding: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
-  }
-  .kpi-list li {
-    margin-bottom: 3px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-  }
-  th, td {
-    border: 1px solid #444;
-    padding: 4px;
-    word-break: break-word;
-  }
-  th {
-    background: #ddd;
-  }
-  .footer {
-    margin-top: 20px;
-    text-align: center;
-    font-size: 8pt;
-    color: #666;
-  }
-</style>
+  <meta charset="utf-8">
+  <title>TradeIntel 360 Report</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 14mm 10mm 14mm 10mm;
+    }
+
+    body {
+      font-family: DejaVu Sans, sans-serif;
+      font-size: 9pt;
+      color: #1f2937;
+      margin: 0;
+      padding: 0;
+    }
+
+    .report-wrap {
+      width: 100%;
+    }
+
+    .report-header {
+      border-bottom: 2px solid #1d4ed8;
+      padding-bottom: 8px;
+      margin-bottom: 14px;
+    }
+
+    .brand-kicker {
+      font-size: 8pt;
+      font-weight: bold;
+      color: #1d4ed8;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .report-title {
+      font-size: 18pt;
+      font-weight: bold;
+      color: #0f172a;
+      margin: 0 0 4px 0;
+    }
+
+    .report-subtitle {
+      font-size: 9pt;
+      color: #475569;
+      margin: 0;
+      line-height: 1.4;
+    }
+
+    .meta-table,
+    .kpi-table,
+    .trades-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .meta-table {
+      margin-top: 12px;
+      margin-bottom: 14px;
+    }
+
+    .meta-table td {
+      width: 50%;
+      vertical-align: top;
+      padding: 7px 9px;
+      border: 1px solid #dbe3ef;
+      background: #f8fbff;
+    }
+
+    .meta-label {
+      font-size: 7.5pt;
+      font-weight: bold;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .meta-value {
+      font-size: 9.5pt;
+      font-weight: bold;
+      color: #0f172a;
+    }
+
+    .section-title {
+      font-size: 12pt;
+      font-weight: bold;
+      color: #0f172a;
+      margin: 16px 0 6px 0;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #dbe3ef;
+    }
+
+    .section-copy {
+      font-size: 8.5pt;
+      color: #475569;
+      margin: 0 0 8px 0;
+      line-height: 1.4;
+    }
+
+    .kpi-table th,
+    .kpi-table td,
+    .trades-table th,
+    .trades-table td {
+      border: 1px solid #cfd8e3;
+      padding: 5px 6px;
+      vertical-align: top;
+    }
+
+    .kpi-table th,
+    .trades-table th {
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: bold;
+      font-size: 8pt;
+      text-align: left;
+    }
+
+    .kpi-name {
+      font-weight: bold;
+      color: #0f172a;
+      width: 50%;
+    }
+
+    .kpi-value {
+      color: #1f2937;
+      width: 50%;
+    }
+
+    .trades-table {
+      font-size: 7.8pt;
+      margin-top: 8px;
+      table-layout: fixed;
+    }
+
+    .trades-table th,
+    .trades-table td {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+
+    .note-box {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border: 1px solid #dbe3ef;
+      background: #f8fbff;
+      color: #475569;
+      font-size: 8.2pt;
+      line-height: 1.4;
+    }
+
+    .empty-state {
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      background: #fafafa;
+      color: #6b7280;
+      font-size: 8.8pt;
+    }
+
+    .footer {
+      margin-top: 16px;
+      padding-top: 8px;
+      border-top: 1px solid #dbe3ef;
+      text-align: center;
+      font-size: 7.8pt;
+      color: #64748b;
+    }
+  </style>
 </head>
 <body>
-  <h1>Trading Report</h1>
-  <p><strong>User:</strong> {{ user.username }}</p>
+  <div class="report-wrap">
 
-  <h2>KPIs</h2>
-  <ul class="kpi-list">
-    {% for key, value in kpis.items %}
-    <li><strong>{{ key }}:</strong> {{ value }}</li>
-    {% endfor %}
-  </ul>
+    <div class="report-header">
+      <div class="brand-kicker">TradeIntel 360</div>
+      <div class="report-title">Trading Performance Report</div>
+        <p class="report-subtitle">
+            {% if is_trade_like %}
+            Post-trade KPI review and reporting output generated from the currently loaded trading dataset.
+            {% else %}
+            Compact report preview generated from the currently loaded dataset. Trading KPIs are only shown when the
+            loaded data matches the expected trading-history structure.
+            {% endif %}
+        </p>
+    </div>
 
-  <h2>Trades</h2>
-  {% if df.empty %}
-    <p>No trades to display.</p>
-  {% else %}
-    <table>
-      <thead>
-        <tr>
-          {% for col in df.columns %}
-          <th>{{ col }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in df.values %}
-        <tr>
-          {% for cell in row %}
-          <td>{{ cell }}</td>
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
+    <table class="meta-table">
+      <tr>
+        <td>
+          <div class="meta-label">User</div>
+          <div class="meta-value">{{ user.username }}</div>
+        </td>
+        <td>
+          <div class="meta-label">Generated At</div>
+          <div class="meta-value">{{ now|date:"Y-m-d H:i" }}</div>
+        </td>
+      </tr>
     </table>
-  {% endif %}
 
-  <div class="footer">
-    Generated on {{ now|date:"Y-m-d H:i" }}
+    <div class="section-title">KPI Summary</div>
+    <p class="section-copy">
+      The KPI section provides a compact view of the currently available performance metrics derived from the loaded trade history.
+    </p>
+
+    {% if kpis %}
+      <table class="kpi-table">
+        <thead>
+          <tr>
+            <th>KPI</th>
+            <th>Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for key, value in kpis.items %}
+          <tr>
+            <td class="kpi-name">{{ key }}</td>
+            <td class="kpi-value">{{ value }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        No KPI data is available for this report.
+      </div>
+    {% endif %}
+
+    <div class="section-title">Trade Review Preview</div>
+    <p class="section-copy">
+      The PDF shows a compact preview of the loaded dataset rather than the full export table, so the report remains readable.
+    </p>
+
+    {% if has_trades %}
+      <table class="trades-table">
+        <thead>
+          <tr>
+            {% for col in trade_columns %}
+            <th>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in trade_rows %}
+          <tr>
+            {% for cell in row %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="note-box">
+          Showing {{ displayed_trade_rows }} row{{ displayed_trade_rows|pluralize }} out of {{ total_trade_rows }} total
+          row{{ total_trade_rows|pluralize }} in the current dataset.
+          {% if not is_trade_like %}
+          The current session data does not match the expected trading-history structure, so this PDF is being rendered
+          as a compact generic data preview rather than a KPI-led trading performance report.
+          {% endif %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        No rows are available to display in this report.
+      </div>
+    {% endif %}
+
+    <div class="footer">
+      Generated by TradeIntel 360 on {{ now|date:"Y-m-d H:i" }}
+    </div>
   </div>
 </body>
 </html>

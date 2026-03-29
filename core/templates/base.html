@@ -83,46 +83,18 @@
             <a
               class="nav-link dropdown-toggle {% if app == 'trading' %}active{% endif %}"
               href="#"
-              id="secondaryMenu"
+              id="supportMenu"
               role="button"
               data-bs-toggle="dropdown"
               aria-expanded="false"
             >
               <i class="bi bi-grid me-1"></i>Support
             </a>
-            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark" aria-labelledby="secondaryMenu">
+            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark" aria-labelledby="supportMenu">
               <li><h6 class="dropdown-header">Post-trade support</h6></li>
-
               <li>
                 <a class="dropdown-item {% if app == 'trading' and name == 'trade_list' %}active{% endif %}" href="{% url 'trading:trade_list' %}">
                   Trade Review Table
-                </a>
-              </li>
-
-              <li><hr class="dropdown-divider"></li>
-              <li><h6 class="dropdown-header">Secondary tools</h6></li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'trading' and name == 'risk_calculator' %}active{% endif %}" href="{% url 'trading:risk_calculator' %}">
-                  R/R Calculator
-                </a>
-              </li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'trading' and name == 'lot_size' %}active{% endif %}" href="{% url 'trading:lot_size' %}">
-                  Lot Size
-                </a>
-              </li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'trading' and name == 'strategy_risk' %}active{% endif %}" href="{% url 'trading:strategy_risk' %}">
-                  Strategy Risk
-                </a>
-              </li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'trading' and name == 'risk_per_trade' %}active{% endif %}" href="{% url 'trading:risk_per_trade' %}">
-                  Risk per Trade
                 </a>
               </li>
             </ul>

@@ -1,65 +1,182 @@
 {% extends "base.html" %}
-{% block title %}My Trades | TradeIntel{% endblock %}
+
+{% block title %}Trade Review Table | TradeIntel 360{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 m-0">My Trades</h1>
-  <div>
-    <a class="btn btn-primary" href="{% url 'trading:trade_create' %}"><i class="bi bi-plus-lg"></i> New Trade</a>
+{% include "partials/page_header.html" with eyebrow="Post-trade support" eyebrow_icon="bi-table" title="Trade review table" copy="Review manually managed trades in a structured post-trade table with filters, search, and paginated inspection." %}
+
+<div class="surface-card section-card mb-4">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+    <div>
+      <h2 class="section-heading mb-1">Trade filters</h2>
+      <p class="section-subcopy mb-0">
+        Narrow the review table by symbol, side, status, or a broader smart search.
+      </p>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-primary" href="{% url 'trading:trade_create' %}">
+        <i class="bi bi-plus-lg me-2"></i>New Trade
+      </a>
+      <a class="btn btn-soft" href="{% url 'trading:trade_list' %}">
+        <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+      </a>
+    </div>
   </div>
+
+  <form method="get" class="app-filter-bar">
+    <div class="row g-3 w-100">
+      <div class="col-md-3">
+        <label class="form-label">Symbol</label>
+        <input
+          type="text"
+          name="symbol"
+          class="form-control"
+          placeholder="e.g. XAUUSD"
+          value="{{ symbol }}"
+        >
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Side</label>
+        <select name="side" class="form-select">
+          <option value="">All sides</option>
+          <option value="LONG" {% if side == "LONG" %}selected{% endif %}>Long</option>
+          <option value="SHORT" {% if side == "SHORT" %}selected{% endif %}>Short</option>
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Status</label>
+        <select name="status" class="form-select">
+          <option value="">All status</option>
+          <option value="OPEN" {% if status == "OPEN" %}selected{% endif %}>Open</option>
+          <option value="CLOSED" {% if status == "CLOSED" %}selected{% endif %}>Closed</option>
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label">Smart Filter</label>
+        <input
+          type="text"
+          name="q"
+          class="form-control"
+          placeholder="Tag, note, status..."
+          value="{{ q }}"
+        >
+      </div>
+
+      <div class="col-12 d-flex flex-wrap gap-2">
+        <button class="btn btn-dark" type="submit">
+          <i class="bi bi-funnel me-2"></i>Apply Filters
+        </button>
+        <a class="btn btn-soft" href="{% url 'trading:trade_list' %}">
+          <i class="bi bi-arrow-counterclockwise me-2"></i>Clear
+        </a>
+      </div>
+    </div>
+  </form>
 </div>
 
-<form class="row g-2 mb-3">
-  <div class="col-md-3"><input name="symbol" class="form-control" placeholder="Symbol" value="{{ request.GET.symbol }}"></div>
-  <div class="col-md-3">
-    <select name="side" class="form-select">
-      <option value="">All Sides</option>
-      <option value="LONG" {% if request.GET.side == 'LONG' %}selected{% endif %}>Long</option>
-      <option value="SHORT" {% if request.GET.side == 'SHORT' %}selected{% endif %}>Short</option>
-    </select>
-  </div>
-  <div class="col-md-3">
-    <select name="status" class="form-select">
-      <option value="">All Status</option>
-      <option value="OPEN" {% if request.GET.status == 'OPEN' %}selected{% endif %}>Open</option>
-      <option value="CLOSED" {% if request.GET.status == 'CLOSED' %}selected{% endif %}>Closed</option>
-    </select>
-  </div>
-  <div class="col-md-3"><button class="btn btn-dark w-100"><i class="bi bi-funnel"></i> Filter</button></div>
-</form>
+<div class="surface-card section-card">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h2 class="section-heading mb-1">Trade table</h2>
+      <p class="section-subcopy mb-0">
+        Post-trade review surface for manually managed trade records.
+      </p>
+    </div>
 
-<div class="table-responsive card p-2">
-  <table class="table table-striped align-middle mb-0">
-    <thead><tr>
-      <th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>PNL</th><th>Status</th><th></th>
-    </tr></thead>
-    <tbody>
-    {% for t in page %}
-      <tr>
-        <td>{{ t.symbol }}</td>
-        <td>{{ t.side }}</td>
-        <td>{{ t.quantity }}</td>
-        <td>{{ t.entry_price }}</td>
-        <td>{{ t.exit_price|default:"—" }}</td>
-        <td>{{ t.pnl|default:t.realized_pnl|default:"—" }}</td>
-        <td>{{ t.status }}</td>
-        <td class="text-end">
-          <a class="btn btn-sm btn-outline-secondary" href="{% url 'trading:trade_detail' t.pk %}">View</a>
-        </td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="8" class="text-muted">No trades yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    {% if page %}
+    <span class="signal-badge">
+      <i class="bi bi-table me-1"></i>
+      Page {{ page.number|default:1 }} of {{ page.paginator.num_pages|default:1 }}
+    </span>
+    {% endif %}
+  </div>
+
+  {% if page and page.object_list %}
+    <div class="table-shell">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Qty</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>PNL</th>
+              <th>Status</th>
+              <th>Opened</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in page %}
+              <tr>
+                <td class="fw-semibold">{{ t.symbol }}</td>
+                <td>{{ t.side }}</td>
+                <td>{{ t.quantity }}</td>
+                <td>{{ t.entry_price }}</td>
+                <td>{{ t.exit_price|default:"—" }}</td>
+                <td>{{ t.pnl|default:t.realized_pnl|default:"—" }}</td>
+                <td>{{ t.status }}</td>
+                <td>{{ t.open_time|date:"Y-m-d H:i" }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-soft" href="{% url 'trading:trade_detail' t.pk %}">
+                    <i class="bi bi-eye me-1"></i>View
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if page.paginator.num_pages > 1 %}
+    <nav class="mt-3">
+      <ul class="pagination pagination-sm mb-0">
+        {% if page.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?{{ page_query }}{% if page_query %}&{% endif %}page={{ page.previous_page_number }}">
+              &laquo; Prev
+            </a>
+          </li>
+        {% endif %}
+
+        <li class="page-item disabled">
+          <span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+        </li>
+
+        {% if page.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?{{ page_query }}{% if page_query %}&{% endif %}page={{ page.next_page_number }}">
+              Next &raquo;
+            </a>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+
+    <div class="note-box mt-3">
+      This table is intended as a secondary post-trade review surface within TradeIntel 360, not the primary analytics workflow.
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state__icon">
+        <i class="bi bi-journal-text"></i>
+      </div>
+      <h2 class="section-heading mb-2">No trades available</h2>
+      <p class="section-subcopy mb-3">
+        No manual trades matched the current filter set, or no trade records have been created yet.
+      </p>
+      <a class="btn btn-primary" href="{% url 'trading:trade_create' %}">
+        <i class="bi bi-plus-lg me-2"></i>Create Trade
+      </a>
+    </div>
+  {% endif %}
 </div>
-
-{% if page.paginator.num_pages > 1 %}
-<nav class="mt-3">
-  <ul class="pagination">
-    {% if page.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page.previous_page_number }}">&laquo;</a></li>{% endif %}
-    <li class="page-item disabled"><span class="page-link">Page {{ page.number }} of {{ page.paginator.num_pages }}</span></li>
-    {% if page.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page.next_page_number }}">&raquo;</a></li>{% endif %}
-  </ul>
-</nav>
-{% endif %}
 {% endblock %}

@@ -1,28 +1,128 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}{% if trade %}Edit Trade{% else %}New Trade{% endif %} | TradeIntel{% endblock %}
+
+{% block title %}{% if trade %}Edit Trade{% else %}New Trade{% endif %} | TradeIntel 360{% endblock %}
+
 {% block content %}
-<h1 class="h4 mb-3">{% if trade %}Edit{% else %}New{% endif %} Trade</h1>
-<form method="post" class="card p-3">
-  {% csrf_token %}
-  {{ form.non_field_errors }}
-  <div class="row g-3">
-    {% for field in form %}
-      <div class="col-md-6">
-        <label class="form-label">{{ field.label }}</label>
-        {{ field }}
-        {% if field.errors %}<div class="text-danger small">{{ field.errors|join:", " }}</div>{% endif %}
+{% if trade %}
+  {% include "partials/page_header.html" with eyebrow="Post-trade support" eyebrow_icon="bi-pencil-square" title="Edit trade" copy="Update a manually managed trade record used for secondary post-trade review." %}
+{% else %}
+  {% include "partials/page_header.html" with eyebrow="Post-trade support" eyebrow_icon="bi-pencil-square" title="New trade" copy="Create a manually managed trade record to support secondary post-trade review workflows." %}
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="surface-card section-card h-100">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">{% if trade %}Edit trade record{% else %}Create trade record{% endif %}</h2>
+          <p class="section-subcopy mb-0">
+            {% if trade %}
+              Update a manually managed trade entry used for secondary post-trade review.
+            {% else %}
+              Add a manually managed trade entry to support post-trade inspection workflows.
+            {% endif %}
+          </p>
+        </div>
+
+        <span class="signal-badge">
+          <i class="bi bi-journal-plus"></i>
+          {% if trade %}Edit mode{% else %}Create mode{% endif %}
+        </span>
       </div>
-    {% endfor %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <div class="row g-3">
+          {% for field in form %}
+            <div class="col-md-6">
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}
+                <div class="form-text">{{ field.help_text }}</div>
+              {% endif %}
+              {% if field.errors %}
+                <div class="text-danger small mt-2">
+                  {% for error in field.errors %}
+                    <div>{{ error }}</div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+
+        <div id="rrPreview" class="note-box mt-4">
+          Risk / reward preview will appear here when applicable.
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 mt-4">
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-check2-circle me-2"></i>Save Trade
+          </button>
+          <a class="btn btn-soft" href="{% url 'trading:trade_list' %}">
+            <i class="bi bi-arrow-left me-2"></i>Cancel
+          </a>
+        </div>
+      </form>
+    </div>
   </div>
-  <div id="rrPreview" class="mt-2 text-muted"></div>
-  <div class="mt-3 d-flex gap-2">
-    <button class="btn btn-primary">Save</button>
-    <a class="btn btn-outline-secondary" href="{% url 'trading:trade_list' %}">Cancel</a>
+
+  <div class="col-lg-4">
+    <div class="surface-card section-card mb-4">
+      <h2 class="section-heading mb-3">Workflow context</h2>
+      <p class="section-subcopy mb-3">
+        Manual trade entry is a secondary support workflow inside TradeIntel 360.
+      </p>
+
+      <div class="vstack gap-3">
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">1</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Primary path</h3>
+            <p class="section-subcopy mb-0">Uploaded trade history remains the main analytics input for the product.</p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">2</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Secondary support</h3>
+            <p class="section-subcopy mb-0">This form helps maintain manual trade records for supporting review workflows.</p>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3">
+          <div class="workflow-number flex-shrink-0">3</div>
+          <div>
+            <h3 class="h6 fw-bold mb-1">Review</h3>
+            <p class="section-subcopy mb-0">Saved trades can be inspected through the trade review table and detail page.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Good usage</h2>
+      <p class="section-subcopy mb-0">
+        Use this form for manual review support, corrections, or portfolio demonstration of trade-record handling. The main public reviewer flow should still center on Upload, Dashboard, KPI Report, and Exports.
+      </p>
+    </div>
   </div>
-</form>
+</div>
 {% endblock %}
 
 {% block extra_js %}
+<script>
+  window.page_title = "{% if trade %}Edit trade{% else %}New trade{% endif %}";
+  window.page_copy = "{% if trade %}Update a manually managed trade record used for secondary post-trade review.{% else %}Create a manually managed trade record to support secondary post-trade review workflows.{% endif %}";
+</script>
 <script src="{% static 'trading/js/trade_logic.js' %}"></script>
 {% endblock %}

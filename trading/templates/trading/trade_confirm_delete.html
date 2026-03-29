@@ -1,10 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Delete Trade | TradeIntel{% endblock %}
+
+{% block title %}Delete Trade | TradeIntel 360{% endblock %}
+
 {% block content %}
-<h1 class="h5">Delete Trade #{{ trade.id }}?</h1>
-<form method="post" class="mt-3">
-  {% csrf_token %}
-  <button class="btn btn-danger">Yes, delete</button>
-  <a class="btn btn-outline-secondary" href="{% url 'trading:trade_detail' trade.pk %}">Cancel</a>
-</form>
+{% include "partials/page_header.html" with eyebrow="Post-trade support" eyebrow_icon="bi-trash" title="Delete trade" copy="Confirm removal of a manually managed trade record from the secondary post-trade support workflow." %}
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="surface-card section-card">
+      <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+        <div>
+          <h2 class="section-heading mb-1">Delete confirmation</h2>
+          <p class="section-subcopy mb-0">
+            This action will permanently remove the selected manual trade record.
+          </p>
+        </div>
+
+        <span class="signal-badge">
+          <i class="bi bi-hash"></i>
+          Trade #{{ trade.id }}
+        </span>
+      </div>
+
+      <div class="surface-card-strong section-card mb-4">
+        <div class="vstack gap-2">
+          <div><strong>Symbol:</strong> {{ trade.symbol }}</div>
+          <div><strong>Side:</strong> {{ trade.side }}</div>
+          <div><strong>Status:</strong> {{ trade.status }}</div>
+          <div><strong>Opened:</strong> {{ trade.open_time|date:"Y-m-d H:i" }}</div>
+          <div><strong>PNL:</strong> {{ trade.pnl|default:trade.realized_pnl|default:"—" }}</div>
+        </div>
+      </div>
+
+      <div class="note-box mb-4">
+        This deletion affects only the manual trade record stored in the secondary post-trade support workflow.
+      </div>
+
+      <form method="post" class="d-flex flex-wrap gap-2">
+        {% csrf_token %}
+        <button class="btn btn-outline-danger" type="submit">
+          <i class="bi bi-trash me-2"></i>Yes, delete trade
+        </button>
+        <a class="btn btn-soft" href="{% url 'trading:trade_detail' trade.pk %}">
+          <i class="bi bi-arrow-left me-2"></i>Cancel
+        </a>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Workflow context</h2>
+      <p class="section-subcopy mb-0">
+        Manual trade records are a secondary support layer in TradeIntel 360. The primary reviewer path remains centered on uploaded trade history, KPI review, dashboard analysis, and reporting outputs.
+      </p>
+    </div>
+  </div>
+</div>
 {% endblock %}

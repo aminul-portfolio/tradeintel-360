@@ -26,9 +26,6 @@ urlpatterns = [
     path('accounts/', include('django.contrib.auth.urls')),
     path('performance/', include('performance.urls')),
     path('trading/', include('trading.urls')),
-    path("marketdata/", include(("marketdata.urls", "marketdata"), namespace="marketdata")),
-    path("api/", include("marketdata.api_urls")),
-
 ]
 
 if settings.DEBUG:

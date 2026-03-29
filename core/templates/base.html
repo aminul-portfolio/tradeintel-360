@@ -78,20 +78,20 @@
             </ul>
           </li>
 
-          <!-- Secondary surfaces -->
+          <!-- Secondary post-trade support -->
           <li class="nav-item dropdown">
             <a
-              class="nav-link dropdown-toggle {% if app == 'trading' or app == 'marketdata' %}active{% endif %}"
+              class="nav-link dropdown-toggle {% if app == 'trading' %}active{% endif %}"
               href="#"
               id="secondaryMenu"
               role="button"
               data-bs-toggle="dropdown"
               aria-expanded="false"
             >
-              <i class="bi bi-grid me-1"></i>More
+              <i class="bi bi-grid me-1"></i>Support
             </a>
             <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark" aria-labelledby="secondaryMenu">
-              <li><h6 class="dropdown-header">Secondary surfaces</h6></li>
+              <li><h6 class="dropdown-header">Post-trade support</h6></li>
 
               <li>
                 <a class="dropdown-item {% if app == 'trading' and name == 'trade_list' %}active{% endif %}" href="{% url 'trading:trade_list' %}">
@@ -99,26 +99,8 @@
                 </a>
               </li>
 
-              <li>
-                <a class="dropdown-item {% if app == 'marketdata' and name == 'dashboard' %}active{% endif %}" href="{% url 'marketdata:dashboard' %}">
-                  Market Data Dashboard
-                </a>
-              </li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'marketdata' and name == 'asset_list' %}active{% endif %}" href="{% url 'marketdata:asset_list' %}">
-                  Assets
-                </a>
-              </li>
-
-              <li>
-                <a class="dropdown-item {% if app == 'marketdata' and name == 'ohlc_list' %}active{% endif %}" href="{% url 'marketdata:ohlc_list' %}">
-                  OHLC Data
-                </a>
-              </li>
-
               <li><hr class="dropdown-divider"></li>
-              <li><h6 class="dropdown-header">Tools</h6></li>
+              <li><h6 class="dropdown-header">Secondary tools</h6></li>
 
               <li>
                 <a class="dropdown-item {% if app == 'trading' and name == 'risk_calculator' %}active{% endif %}" href="{% url 'trading:risk_calculator' %}">

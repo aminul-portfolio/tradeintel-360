@@ -2,15 +2,11 @@
 
 **Post-trade performance analytics built with Python, Django, Pandas, Plotly, and openpyxl.**
 
-Upload a trade history CSV or Excel file and TradeIntel 360 cleans it, computes KPI outputs, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
-
-→ **[Portfolio overview](#)** · **[View screenshots below](#screenshots)**
+Upload a trade history CSV [Comma-Separated Values] or Excel [Microsoft Excel] file and TradeIntel 360 cleans it, computes KPI [Key Performance Indicator] outputs, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
 
 ![Performance Dashboard](docs/screenshots/04.1_performance_dashboard.png)
 
 ---
-
-## What this demonstrates
 
 ## What this demonstrates
 
@@ -27,7 +23,7 @@ Upload a trade history CSV or Excel file and TradeIntel 360 cleans it, computes 
 
 ## Core workflow
 
-```
+```text
 Upload CSV / XLSX
        ↓
 Clean and normalise trade history

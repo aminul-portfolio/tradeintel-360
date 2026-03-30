@@ -41,19 +41,43 @@ The workflow is session-driven: upload once, review across all surfaces without 
 
 ## Screenshots
 
-<table>
-<tr>
-<td><img src="docs/screenshots/02_home_reviewer_path.png" alt="Reviewer path" width="320"/><br><em>Reviewer onboarding path</em></td>
-<td><img src="docs/screenshots/03_upload_trade_history.png" alt="Upload" width="320"/><br><em>Trade history upload</em></td>
-</tr>
-<tr>
-<td><img src="docs/screenshots/04.2_performance_dashboard.png" alt="Charts" width="320"/><br><em>Dashboard charts</em></td>
-<td><img src="docs/screenshots/05_kpi_report.png" alt="KPI report" width="320"/><br><em>KPI report</em></td>
-</tr>
-<tr>
-<td><img src="docs/screenshots/06_excel_export_configuration.png" alt="Excel export" width="320"/><br><em>Configurable Excel export</em></td>
-<td><img src="docs/screenshots/07_trade_review_table_optional.png" alt="Trade table" width="320"/><br><em>Trade review table with search and pagination</em></td>
-</tr>
+<table cellpadding="14" cellspacing="0">
+  <tr>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/02_home_reviewer_path.png" alt="Reviewer path" width="320"><br>
+      <sub><em>Reviewer onboarding path</em></sub>
+    </td>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/03_upload_trade_history.png" alt="Upload" width="320"><br>
+      <sub><em>Trade history upload</em></sub>
+    </td>
+  </tr>
+
+  <tr><td colspan="2" height="8"></td></tr>
+
+  <tr>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/04.2_performance_dashboard.png" alt="Charts" width="320"><br>
+      <sub><em>Dashboard charts</em></sub>
+    </td>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/05_kpi_report.png" alt="KPI report" width="320"><br>
+      <sub><em>KPI report</em></sub>
+    </td>
+  </tr>
+
+  <tr><td colspan="2" height="8"></td></tr>
+
+  <tr>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/06_excel_export_configuration.png" alt="Excel export" width="320"><br>
+      <sub><em>Configurable Excel export</em></sub>
+    </td>
+    <td valign="top" align="center">
+      <img src="docs/screenshots/07_trade_review_table_optional.png" alt="Trade table" width="320"><br>
+      <sub><em>Trade review table with search and pagination</em></sub>
+    </td>
+  </tr>
 </table>
 
 ---

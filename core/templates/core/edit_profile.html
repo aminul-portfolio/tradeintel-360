@@ -1,66 +1,177 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block title %}Edit Profile | TradeIntel 360{% endblock %}
+
 {% block content %}
-<div class="container py-5">
-  <h2 class="mb-4 text-primary fw-bold">👤 Edit Your Profile</h2>
 
-  <form method="POST" enctype="multipart/form-data" class="row g-4">
-    {% csrf_token %}
+{% include "partials/page_header.html" with eyebrow="Account" eyebrow_icon="bi-pencil-square" title="Edit profile" copy="Update your account details, trading preferences, and notification settings." %}
 
-    <!-- User Info -->
-    <div class="col-md-6">
-      <h5 class="text-secondary">Account Information</h5>
-      {{ user_form.non_field_errors }}
-      {% for field in user_form %}
-        <div class="mb-3">
-          {{ field.label_tag }}
-          {{ field }}
-          {% if field.errors %}
-            <div class="text-danger small">{{ field.errors|striptags }}</div>
-          {% endif %}
-        </div>
-      {% endfor %}
-    </div>
+<div class="profile-layout">
 
-    <!-- Profile Info -->
-    <div class="col-md-6">
-      <h5 class="text-secondary">Profile Preferences</h5>
-      {{ profile_form.non_field_errors }}
-      {% for field in profile_form %}
-        <div class="mb-3">
-          {% if field.field.widget.input_type == "checkbox" %}
-            <div class="form-check">
-              {{ field }}
-              {{ field.label_tag }}
-            </div>
-          {% else %}
-            {{ field.label_tag }}
-            {{ field }}
-          {% endif %}
-          {% if field.errors %}
-            <div class="text-danger small">{{ field.errors|striptags }}</div>
-          {% endif %}
-        </div>
-      {% endfor %}
-    </div>
+  {# ── LEFT: Current state summary ── #}
+  <aside class="profile-sidebar">
 
-    <!-- Avatar Preview -->
-    {% if user.userprofile.avatar %}
-      <div class="col-md-12">
-        <label class="form-label">Current Avatar:</label><br>
-        <img src="{{ user.userprofile.avatar.url }}" alt="Avatar" width="120" class="rounded-circle shadow-sm">
+    <div class="surface-card section-card profile-avatar-card">
+      <div class="profile-avatar-wrap">
+        {% if user.userprofile.avatar %}
+          <img src="{{ user.userprofile.avatar.url }}"
+               class="profile-avatar-img" alt="Profile avatar">
+        {% else %}
+          <div class="profile-avatar-placeholder">
+            {{ user.userprofile.display_name|default:user.username|slice:":2"|upper }}
+          </div>
+        {% endif %}
       </div>
-    {% endif %}
-
-    <!-- Submit -->
-    <div class="col-12 mt-4">
-      <button type="submit" class="btn btn-success">
-        💾 Save Changes
-      </button>
-      <a href="{% url 'core:profile' %}" class="btn btn-outline-secondary ms-2">← Cancel</a>
-
+      <div class="profile-identity">
+        <div class="profile-identity__name">
+          {{ user.userprofile.display_name|default:user.username }}
+        </div>
+        <div class="profile-identity__username">@{{ user.username }}</div>
+        <div class="profile-identity__email">{{ user.email }}</div>
+      </div>
     </div>
-  </form>
+
+    <div class="surface-card section-card profile-meta-card">
+      <div class="profile-meta-label">Member since</div>
+      <div class="profile-meta-value">{{ user.date_joined|date:"M Y" }}</div>
+      <div class="profile-meta-divider"></div>
+      <div class="profile-meta-label">Timezone</div>
+      <div class="profile-meta-value">{{ user.userprofile.timezone|default:"UTC" }}</div>
+      <div class="profile-meta-divider"></div>
+      <div class="profile-meta-label">Daily risk limit</div>
+      <div class="profile-meta-value profile-meta-value--accent">
+        {{ user.userprofile.daily_risk_limit_pct }}%
+      </div>
+    </div>
+
+    <div class="surface-card section-card profile-flags-card">
+      <div class="profile-flag {% if user.userprofile.notify_email %}profile-flag--on{% endif %}">
+        <i class="bi bi-envelope"></i>
+        <span>Email notifications</span>
+        <span class="profile-flag__pill">{% if user.userprofile.notify_email %}On{% else %}Off{% endif %}</span>
+      </div>
+      <div class="profile-flag {% if user.userprofile.notify_sound %}profile-flag--on{% endif %}">
+        <i class="bi bi-bell"></i>
+        <span>Sound notifications</span>
+        <span class="profile-flag__pill">{% if user.userprofile.notify_sound %}On{% else %}Off{% endif %}</span>
+      </div>
+      <div class="profile-flag {% if user.userprofile.two_factor_enabled %}profile-flag--on{% endif %}">
+        <i class="bi bi-shield-check"></i>
+        <span>Two-factor auth</span>
+        <span class="profile-flag__pill">{% if user.userprofile.two_factor_enabled %}On{% else %}Off{% endif %}</span>
+      </div>
+    </div>
+
+    <a href="{% url 'core:profile' %}" class="btn btn-soft w-100">
+      <i class="bi bi-arrow-left"></i>Back to profile
+    </a>
+
+  </aside>
+
+  {# ── RIGHT: Edit form ── #}
+  <div class="profile-main">
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      {# Non-field errors #}
+      {% if user_form.non_field_errors or profile_form.non_field_errors %}
+      <div class="alert alert-danger">
+        {{ user_form.non_field_errors }}
+        {{ profile_form.non_field_errors }}
+      </div>
+      {% endif %}
+
+      {# Account section #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Account</span>
+          <p class="section-subcopy mb-0">Your login credentials and contact details.</p>
+        </div>
+
+        <div class="profile-form-grid">
+          {% for field in user_form %}
+          <div class="profile-form-field {% if forloop.last %}profile-form-field--full{% endif %}">
+            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}
+              <div class="profile-field-error">{{ field.errors|striptags }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Profile preferences section #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Profile preferences</span>
+          <p class="section-subcopy mb-0">Display name, trading preferences, and avatar.</p>
+        </div>
+
+        <div class="profile-form-grid">
+          {% for field in profile_form %}
+            {% if field.field.widget.input_type == "checkbox" %}
+              {# Checkboxes handled separately below #}
+            {% else %}
+            <div class="profile-form-field
+              {% if field.name == "bio" or field.name == "preferred_assets" or field.name == "avatar" %}profile-form-field--full{% endif %}">
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}
+                <div class="profile-field-hint">{{ field.help_text }}</div>
+              {% endif %}
+              {% if field.errors %}
+                <div class="profile-field-error">{{ field.errors|striptags }}</div>
+              {% endif %}
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Notifications & security section #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Notifications & security</span>
+          <p class="section-subcopy mb-0">Control alerts and account security settings.</p>
+        </div>
+
+        <div class="profile-toggle-list">
+          {% for field in profile_form %}
+            {% if field.field.widget.input_type == "checkbox" %}
+            <label class="profile-toggle">
+              {{ field }}
+              <div class="profile-toggle__body">
+                <div class="profile-toggle__title">{{ field.label }}</div>
+                {% if field.help_text %}
+                  <div class="profile-toggle__desc">{{ field.help_text }}</div>
+                {% endif %}
+                {% if field.errors %}
+                  <div class="profile-field-error">{{ field.errors|striptags }}</div>
+                {% endif %}
+              </div>
+            </label>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      {# Actions #}
+      <div class="profile-actions">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-check2-circle"></i>Save changes
+        </button>
+        <a href="{% url 'core:profile' %}" class="btn btn-soft">
+          <i class="bi bi-arrow-left"></i>Cancel
+        </a>
+        <a href="{% url 'password_change' %}" class="btn btn-soft" style="margin-left:auto">
+          <i class="bi bi-key"></i>Change password
+        </a>
+      </div>
+
+    </form>
+  </div>
+
 </div>
 {% endblock %}

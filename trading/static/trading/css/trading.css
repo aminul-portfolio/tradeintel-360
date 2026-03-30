@@ -1,7 +1,152 @@
-/* Gradient cards & results (scoped to tools pages) */
-.gradient-card { background: linear-gradient(135deg, #1e3c72, #2a5298); color: #fff; text-align: left; }
-.result-card { background: rgba(255,255,255,.10); border-radius: .5rem; color: #fff; }
+/* ═══════════════════════════════════════════════════════════════════
+   TRADING — scoped component styles
+   trading/static/trading/css/trading.css
+   Loaded after tradeintel_design_system.css.
+   ═══════════════════════════════════════════════════════════════════ */
 
-/* Gradient button specific to tools */
-.btn-gradient { background: linear-gradient(135deg, #ff7e5f, #feb47b); border: none; color: #fff; transition: all .3s ease; }
-.btn-gradient:hover { opacity: .9; transform: scale(1.02); }
+/* ─────────────────────────────────────────────
+   Result card — used on strategy_risk.html
+   for computed output blocks
+   ───────────────────────────────────────────── */
+.result-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+  transition: border-color 0.2s;
+}
+
+.result-card:hover { border-color: var(--border-mid); }
+
+/* ─────────────────────────────────────────────
+   Gradient card — replaced with a surface card
+   that uses an accent left border for emphasis
+   instead of a blue gradient (incompatible with
+   the dark theme and the design token system)
+   ───────────────────────────────────────────── */
+.gradient-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 16px 20px;
+  color: var(--text-1);
+}
+
+/* ─────────────────────────────────────────────
+   Gradient button — replaced with the primary
+   button style from the design system. The
+   orange gradient is incompatible with the
+   teal accent system. Use .btn-primary instead;
+   .btn-gradient is kept as an alias so any
+   existing template references still work.
+   ───────────────────────────────────────────── */
+.btn-gradient {
+  background: var(--accent);
+  border: none;
+  color: #021a14;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+
+.btn-gradient:hover {
+  background: #00ffca;
+  color: #021a14;
+  opacity: 1;
+  transform: none;
+}
+
+/* ─────────────────────────────────────────────
+   R/R preview box
+   Lives inside .note-box on trade_form.html.
+   Colour states are applied via JS.
+   ───────────────────────────────────────────── */
+#rrPreview {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+/* Colour states set by trade_logic.js */
+#rrPreview.rr--empty   { color: var(--text-3); border-left-color: var(--border); }
+#rrPreview.rr--poor    { color: var(--red);    border-left-color: var(--red);    }
+#rrPreview.rr--fair    { color: var(--amber);  border-left-color: var(--amber);  }
+#rrPreview.rr--good    { color: var(--green);  border-left-color: var(--green);  }
+#rrPreview.rr--strong  { color: var(--accent); border-left-color: var(--accent); }
+
+/* ─────────────────────────────────────────────
+   Trade form grid overrides
+   Replaces Bootstrap row g-3 col-md-6 at wide
+   viewports for a cleaner two-column layout
+   ───────────────────────────────────────────── */
+.trade-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.trade-form-grid .form-field-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .trade-form-grid { grid-template-columns: 1fr; }
+}
+
+/* ─────────────────────────────────────────────
+   Trade list table — symbol pill
+   ───────────────────────────────────────────── */
+.symbol-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-1);
+}
+
+/* ─────────────────────────────────────────────
+   Trade status pills (OPEN / CLOSED)
+   ───────────────────────────────────────────── */
+.status-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.status-pill--open   { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-glow); }
+.status-pill--closed { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green-border); }
+
+/* ─────────────────────────────────────────────
+   Side pills (LONG / SHORT)
+   ───────────────────────────────────────────── */
+.side-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.side-pill--long  { background: var(--green-dim); color: var(--green); }
+.side-pill--short { background: var(--red-dim);   color: var(--red);   }
+
+/* ─────────────────────────────────────────────
+   PnL value colouring (trade list / detail)
+   ───────────────────────────────────────────── */
+.pnl-pos { color: var(--green) !important; font-family: var(--font-mono); font-weight: 600; }
+.pnl-neg { color: var(--red)   !important; font-family: var(--font-mono); font-weight: 600; }
+.pnl-nil { color: var(--text-3) !important; font-family: var(--font-mono); }

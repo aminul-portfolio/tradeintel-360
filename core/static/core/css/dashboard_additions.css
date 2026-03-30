@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════
-   DASHBOARD — layout & component additions
+   DASHBOARD ADDITIONS
    core/static/core/css/dashboard_additions.css
-   Append to tradeintel_design_system.css or load after it.
+   Load after tradeintel_design_system.css.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ─────────────────────────────────────────────
@@ -28,11 +28,7 @@
   margin-bottom: 16px;
 }
 
-.dash-card-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
+.dash-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 /* ─────────────────────────────────────────────
    FILTER GRID
@@ -57,12 +53,7 @@
 /* ─────────────────────────────────────────────
    EXPORT LIST
    ───────────────────────────────────────────── */
-.export-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
+.export-list { display: flex; flex-direction: column; gap: 6px; flex: 1; }
 
 .export-item {
   display: flex;
@@ -86,10 +77,7 @@
   text-decoration: none;
 }
 
-.export-item--accent {
-  border-color: var(--accent-glow);
-  color: var(--accent);
-}
+.export-item--accent { border-color: var(--accent-glow); color: var(--accent); }
 
 .export-item--accent:hover {
   background: var(--accent-dim);
@@ -106,25 +94,16 @@
   font-size: 12px;
 }
 
-.export-item--accent .export-item__icon {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
+.export-item--accent .export-item__icon { background: var(--accent-dim); color: var(--accent); }
 
 .export-item__label { flex: 1; }
 
-.export-item__arrow {
-  font-size: 16px;
-  opacity: 0.4;
-  flex-shrink: 0;
-}
+.export-item__arrow { font-size: 16px; opacity: 0.4; flex-shrink: 0; }
 
 /* ─────────────────────────────────────────────
    SECTION WRAPPER
    ───────────────────────────────────────────── */
-.dash-section {
-  margin-bottom: 28px;
-}
+.dash-section { margin-bottom: 28px; }
 
 .dash-section-header {
   display: flex;
@@ -136,43 +115,28 @@
 }
 
 /* ─────────────────────────────────────────────
-   KPI GRID — 4 columns, no orphan rows
+   KPI GRID — strict 4 columns
    ───────────────────────────────────────────── */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-
-.kpi-grid .app-kpi-card {
-  min-width: 0;
-}
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.kpi-grid .app-kpi-card { min-width: 0; }
 
 /* ─────────────────────────────────────────────
    CHART GRID — 2 columns
-   Both performance visuals and breakdown views
-   use .chart-grid. .chart-grid--three is retired.
    ───────────────────────────────────────────── */
-.chart-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-
+.chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .chart-grid .chart-shell,
-.chart-grid .dashboard-plotly {
-  min-width: 0;
-  height: auto;
-}
+.chart-grid .dashboard-plotly { min-width: 0; height: auto; }
 
+/* Chart section title — matches design system label style exactly */
 .chart-shell__title {
   font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--text-3);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
+  display: block;
 }
 
 /* ─────────────────────────────────────────────
@@ -185,8 +149,6 @@
   overflow: hidden;
   transition: border-color 0.2s;
 }
-
-.table-card:hover { border-color: var(--border-mid); }
 
 .table-card__header {
   display: flex;
@@ -205,11 +167,8 @@
   align-items: center;
 }
 
-/* Pandas df_html table overrides */
-.table-shell .dataframe {
-  width: 100%;
-  border-collapse: collapse;
-}
+/* Pandas df_html .dataframe table overrides */
+.table-shell .dataframe { width: 100%; border-collapse: collapse; }
 
 .table-shell .dataframe thead th {
   background: var(--bg-surface) !important;
@@ -235,9 +194,7 @@
   white-space: nowrap;
 }
 
-.table-shell .dataframe tbody tr:last-child td {
-  border-bottom: none !important;
-}
+.table-shell .dataframe tbody tr:last-child td { border-bottom: none !important; }
 
 .table-shell .dataframe tbody tr:hover td {
   background: var(--bg-hover) !important;
@@ -247,10 +204,7 @@
 /* ─────────────────────────────────────────────
    FILE LIST
    ───────────────────────────────────────────── */
-.file-list {
-  display: flex;
-  flex-direction: column;
-}
+.file-list { display: flex; flex-direction: column; }
 
 .file-item {
   display: flex;
@@ -265,12 +219,7 @@
 
 .file-item:last-child { border-bottom: none; }
 
-.file-item__name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-1);
-  margin-bottom: 4px;
-}
+.file-item__name { font-size: 13px; font-weight: 500; color: var(--text-1); margin-bottom: 4px; }
 
 .file-item__meta {
   display: flex;
@@ -300,7 +249,7 @@
 .file-status--error     { background: var(--red-dim);   color: var(--red);   }
 
 /* ─────────────────────────────────────────────
-   RESPONSIVE — single cascade, no conflicts
+   RESPONSIVE
    ───────────────────────────────────────────── */
 @media (max-width: 1200px) {
   .kpi-grid { grid-template-columns: repeat(4, 1fr); }
@@ -316,10 +265,10 @@
 }
 
 @media (max-width: 768px) {
-  .kpi-grid    { grid-template-columns: repeat(2, 1fr); }
-  .chart-grid  { grid-template-columns: 1fr; }
-  .filter-grid { grid-template-columns: 1fr 1fr; }
-  .table-card__header { flex-direction: column; align-items: flex-start; }
+  .kpi-grid                   { grid-template-columns: repeat(2, 1fr); }
+  .chart-grid                 { grid-template-columns: 1fr; }
+  .filter-grid                { grid-template-columns: 1fr 1fr; }
+  .table-card__header         { flex-direction: column; align-items: flex-start; }
 }
 
 @media (max-width: 480px) {

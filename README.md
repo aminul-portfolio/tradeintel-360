@@ -2,9 +2,29 @@
 
 **Post-trade performance analytics built with Python, Django, Pandas, Plotly, and openpyxl.**
 
-Upload a trade history CSV [Comma-Separated Values] or Excel [Microsoft Excel] file and TradeIntel 360 cleans it, computes KPI [Key Performance Indicator] outputs, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
+Upload a trade history CSV or Excel file — TradeIntel 360 cleans it, computes a full KPI suite, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The entire review workflow runs from a single uploaded file with no manual data preparation required.
 
-![Performance Dashboard](docs/screenshots/04.1_performance_dashboard.png)
+→ **[Live demo](#)** &nbsp;·&nbsp; **[Portfolio overview](#)**
+
+<br>
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/04.1_performance_dashboard.png"
+           alt="TradeIntel 360 — Performance Dashboard"
+           width="100%"
+           style="border-radius:8px;border:1px solid #1e2d45;display:block">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="padding-top:6px">
+      <sub><strong>Performance Dashboard</strong> — KPI summary, equity curve, and export controls</sub>
+    </td>
+  </tr>
+</table>
+
+<br>
 
 ---
 
@@ -12,18 +32,18 @@ Upload a trade history CSV [Comma-Separated Values] or Excel [Microsoft Excel] f
 
 | Area | Detail |
 |---|---|
-| **Data workflow** | Ingest raw CSV/XLSX → clean → normalise → session-backed analysis workflow |
-| **KPI engine** | 17 computed metrics from uploaded data, including win rate, profit factor, Sharpe, max drawdown, and expectancy |
-| **Django patterns** | Login-gated views, file upload handling, session state, paginated tables, context-driven reporting views |
-| **Data visualisation** | Plotly-rendered equity curve, P&L distribution, monthly performance, and segmented win/loss views |
-| **Export workflow** | PDF generation via xhtml2pdf, configurable Excel export with optional KPI sheet via openpyxl, and cleaned CSV export |
-| **FinTech domain** | Trade-level data structures, performance metrics, and analyst-facing review workflow presentation |
+| **Data pipeline** | Ingest raw CSV/XLSX → clean → normalise → session-backed analysis workflow |
+| **KPI engine** | 17 computed metrics: win rate, profit factor, Sharpe, max drawdown, expectancy, and more |
+| **Django patterns** | Login-gated views, file upload handling, session state, paginated tables, context-driven reporting |
+| **Data visualisation** | Plotly equity curve, P&L distribution, monthly breakdown, segmented win/loss charts |
+| **Export pipeline** | PDF via xhtml2pdf, configurable Excel with optional KPI sheet via openpyxl, cleaned CSV |
+| **FinTech domain** | Trade-level data structures, performance metrics, analyst-facing workflow presentation |
 
 ---
 
 ## Core workflow
 
-```text
+```
 Upload CSV / XLSX
        ↓
 Clean and normalise trade history
@@ -35,50 +55,140 @@ Store cleaned DataFrame in session
 └──────────────┴──────────────┴──────────────┴──────────────┘
 ```
 
-The workflow is session-driven: upload once, review across all surfaces without re-uploading. Dashboard filters (date range, symbol) update the active dataset and recompute KPIs in real time.
+Session-driven: upload once, review across all surfaces without re-uploading. Dashboard filters (date range, symbol) update the active dataset and recompute KPIs live.
 
 ---
 
 ## Screenshots
 
-<table cellpadding="14" cellspacing="0">
+<br>
+
+<!-- Row 1: Onboarding + Upload -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;background:#0e1420">
   <tr>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/02_home_reviewer_path.png" alt="Reviewer path" width="320"><br>
-      <sub><em>Reviewer onboarding path</em></sub>
+    <td width="50%" valign="top"
+        style="padding:20px 12px 20px 20px;border-right:1px solid #1e2d45">
+      <img src="docs/screenshots/02_home_reviewer_path.png"
+           alt="Reviewer onboarding path"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
     </td>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/03_upload_trade_history.png" alt="Upload" width="320"><br>
-      <sub><em>Trade history upload</em></sub>
+    <td width="50%" valign="top"
+        style="padding:20px 20px 20px 12px">
+      <img src="docs/screenshots/03_upload_trade_history.png"
+           alt="Trade history upload"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
     </td>
   </tr>
-
-  <tr><td colspan="2" height="8"></td></tr>
-
   <tr>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/04.2_performance_dashboard.png" alt="Charts" width="320"><br>
-      <sub><em>Dashboard charts</em></sub>
+    <td valign="top"
+        style="padding:10px 12px 16px 20px;border-right:1px solid #1e2d45;border-top:1px solid #1e2d45">
+      <sub><strong>Reviewer onboarding path</strong><br>
+      Step-by-step workflow guiding reviewers from upload to KPI report</sub>
     </td>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/05_kpi_report.png" alt="KPI report" width="320"><br>
-      <sub><em>KPI report</em></sub>
-    </td>
-  </tr>
-
-  <tr><td colspan="2" height="8"></td></tr>
-
-  <tr>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/06_excel_export_configuration.png" alt="Excel export" width="320"><br>
-      <sub><em>Configurable Excel export</em></sub>
-    </td>
-    <td valign="top" align="center">
-      <img src="docs/screenshots/07_trade_review_table_optional.png" alt="Trade table" width="320"><br>
-      <sub><em>Trade review table with search and pagination</em></sub>
+    <td valign="top"
+        style="padding:10px 20px 16px 12px;border-top:1px solid #1e2d45">
+      <sub><strong>Trade history upload</strong><br>
+      CSV or XLSX upload with real-time session loading and status feedback</sub>
     </td>
   </tr>
 </table>
+
+<br>
+
+<!-- Row 2: Dashboard KPIs + Charts -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;background:#0e1420">
+  <tr>
+    <td width="50%" valign="top"
+        style="padding:20px 12px 20px 20px;border-right:1px solid #1e2d45">
+      <img src="docs/screenshots/04.1_performance_dashboard.png"
+           alt="Dashboard KPI summary"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
+    </td>
+    <td width="50%" valign="top"
+        style="padding:20px 20px 20px 12px">
+      <img src="docs/screenshots/04.2_performance_dashboard.png"
+           alt="Dashboard charts"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"
+        style="padding:10px 12px 16px 20px;border-right:1px solid #1e2d45;border-top:1px solid #1e2d45">
+      <sub><strong>KPI summary panel</strong><br>
+      17 computed metrics with date, symbol, and smart search filters</sub>
+    </td>
+    <td valign="top"
+        style="padding:10px 20px 16px 12px;border-top:1px solid #1e2d45">
+      <sub><strong>Performance visuals</strong><br>
+      Equity curve, profit-per-trade bars, distribution histogram, monthly P&L</sub>
+    </td>
+  </tr>
+</table>
+
+<br>
+
+<!-- Row 3: KPI Report + Excel Export -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;background:#0e1420">
+  <tr>
+    <td width="50%" valign="top"
+        style="padding:20px 12px 20px 20px;border-right:1px solid #1e2d45">
+      <img src="docs/screenshots/05_kpi_report.png"
+           alt="KPI report"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
+    </td>
+    <td width="50%" valign="top"
+        style="padding:20px 20px 20px 12px">
+      <img src="docs/screenshots/06_excel_export_configuration.png"
+           alt="Excel export configuration"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"
+        style="padding:10px 12px 16px 20px;border-right:1px solid #1e2d45;border-top:1px solid #1e2d45">
+      <sub><strong>KPI report</strong><br>
+      Structured performance summary with searchable metric table and report context panel</sub>
+    </td>
+    <td valign="top"
+        style="padding:10px 20px 16px 12px;border-top:1px solid #1e2d45">
+      <sub><strong>Excel export configuration</strong><br>
+      Column selection, date and symbol filters, optional KPI sheet and metadata sheet</sub>
+    </td>
+  </tr>
+</table>
+
+<br>
+
+<!-- Row 4: Trade review table (full width) -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;background:#0e1420">
+  <tr>
+    <td valign="top" style="padding:20px">
+      <img src="docs/screenshots/07_trade_review_table_optional.png"
+           alt="Trade review table"
+           width="100%"
+           style="border-radius:6px;border:1px solid #1e2d45;display:block">
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"
+        style="padding:10px 20px 16px 20px;border-top:1px solid #1e2d45">
+      <sub><strong>Trade review table</strong><br>
+      Paginated trade-level inspection with smart search across symbol, type, notes, and date</sub>
+    </td>
+  </tr>
+</table>
+
+<br>
 
 ---
 
@@ -86,20 +196,15 @@ The workflow is session-driven: upload once, review across all surfaces without 
 
 All metrics are computed from the loaded dataset. Applying a date, symbol, or RR filter recomputes the full suite against the filtered subset.
 
-**Volume & outcome**
-- Total trades, wins, losses, break-evens, win rate
+**Volume & outcome** — total trades, wins, losses, break-evens, win rate
 
-**Profit & loss**
-- Total profit, average profit, gross profit, gross loss
-- Average win, average loss, profit factor
+**Profit & loss** — total profit, average profit, gross profit, gross loss, average win, average loss, profit factor
 
-**Risk metrics**
-- Expectancy, best trade, worst trade, max drawdown
+**Risk metrics** — expectancy, best trade, worst trade, max drawdown
 
-**Statistical**
-- Trade-based Sharpe ratio, per-trade profit volatility
+**Statistical** — trade-based Sharpe ratio, per-trade profit volatility
 
-> Note: Sharpe is computed as a trade-series ratio, not an annualised institutional Sharpe. Volatility refers to per-trade profit dispersion.
+> Sharpe is computed as a trade-series ratio, not an annualised institutional Sharpe. Volatility refers to per-trade profit dispersion.
 
 ---
 
@@ -107,15 +212,9 @@ All metrics are computed from the loaded dataset. Applying a date, symbol, or RR
 
 **PDF report** — full KPI summary rendered via xhtml2pdf, ready to share or archive.
 
-**Cleaned CSV export** — normalised version of the uploaded dataset.
+**Cleaned CSV** — normalised version of the uploaded dataset.
 
-**Configurable Excel export** — built with openpyxl with the following options:
-- column selection
-- date range filter
-- symbol filter
-- minimum RR filter (where RR data is present)
-- optional KPI summary sheet
-- export metadata sheet
+**Configurable Excel export** — built with openpyxl, supports column selection, date range filter, symbol filter, minimum RR filter, optional KPI summary sheet, and export metadata sheet.
 
 ---
 
@@ -148,9 +247,9 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Then visit `http://127.0.0.1:8000`, log in, and upload a trade history file to begin the review workflow.
+Visit `http://127.0.0.1:8000`, log in, and upload a trade history file to begin.
 
-**Expected input format:** CSV or XLSX with a `Profit` column and common trade fields such as date/time, symbol, and side/type.
+**Expected input:** CSV or XLSX with a `Profit` column and common trade fields (date/time, symbol, side/type). Sample files are included in `media/trading_files/`.
 
 ---
 
@@ -167,7 +266,7 @@ Then visit `http://127.0.0.1:8000`, log in, and upload a trade history file to b
 
 ## Portfolio context
 
-TradeIntel 360 is the **post-trade analytics** product in a four-project FinTech portfolio, each covering a distinct domain:
+TradeIntel 360 is the **post-trade analytics** product in a four-project FinTech portfolio:
 
 | Project | Domain |
 |---|---|
@@ -180,10 +279,4 @@ TradeIntel 360 is the **post-trade analytics** product in a four-project FinTech
 
 ## Target roles
 
-This project is best aligned to:
-
-- Data Analyst [Finance / Trading]
-- Analytics Engineer [FinTech]
-- BI / Reporting Analyst
-- Python/Django data-product roles
-- Performance reporting and trade-review workflows in finance environments
+Data Analyst (Finance / Trading) · Analytics Engineer (FinTech) · BI / Reporting Analyst · Python/Django data-product roles · Performance reporting and trade-review workflows in finance environments

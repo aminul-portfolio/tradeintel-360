@@ -1,68 +1,201 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}My Profile | TradeIntel{% endblock %}
+{% block title %}My Profile | TradeIntel 360{% endblock %}
 
 {% block content %}
-<div class="container">
-  <h1 class="mb-4">My Profile</h1>
 
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-{{ message.tags }} mb-3">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
+{% include "partials/page_header.html" with eyebrow="Account" eyebrow_icon="bi-person-circle" title="My profile" copy="Manage your account details, display preferences, and notification settings." %}
 
-  <div class="row g-4">
-    <div class="col-md-4">
-      <div class="card p-3 text-center">
+<div class="profile-layout">
+
+  {# ── LEFT: Avatar + meta ── #}
+  <aside class="profile-sidebar">
+
+    <div class="surface-card section-card profile-avatar-card">
+      <div class="profile-avatar-wrap">
         {% if request.user.userprofile.avatar %}
-          <img src="{{ request.user.userprofile.avatar.url }}" class="img-fluid rounded mb-3" alt="Avatar">
+          <img src="{{ request.user.userprofile.avatar.url }}"
+               class="profile-avatar-img" alt="Profile avatar">
         {% else %}
-          <div class="text-muted">No avatar uploaded</div>
+          <div class="profile-avatar-placeholder">
+            {{ request.user.userprofile.display_name|default:request.user.username|slice:":2"|upper }}
+          </div>
         {% endif %}
+      </div>
+
+      <div class="profile-identity">
+        <div class="profile-identity__name">
+          {{ request.user.userprofile.display_name|default:request.user.username }}
+        </div>
+        <div class="profile-identity__username">@{{ request.user.username }}</div>
+        <div class="profile-identity__email">{{ request.user.email }}</div>
       </div>
     </div>
 
-    <div class="col-md-8">
-      <form method="post" enctype="multipart/form-data" class="card p-3">
-        {% csrf_token %}
-        <h5 class="mb-3">Account</h5>
-        <div class="row g-3">
-          <div class="col-md-6">{{ uform.first_name.label_tag }} {{ uform.first_name }}</div>
-          <div class="col-md-6">{{ uform.last_name.label_tag }} {{ uform.last_name }}</div>
-          <div class="col-md-12">{{ uform.email.label_tag }} {{ uform.email }}</div>
+    <div class="surface-card section-card profile-meta-card">
+      <div class="profile-meta-label">Member since</div>
+      <div class="profile-meta-value">{{ request.user.date_joined|date:"M Y" }}</div>
+
+      <div class="profile-meta-divider"></div>
+
+      <div class="profile-meta-label">Timezone</div>
+      <div class="profile-meta-value">{{ request.user.userprofile.timezone|default:"UTC" }}</div>
+
+      <div class="profile-meta-divider"></div>
+
+      <div class="profile-meta-label">Daily risk limit</div>
+      <div class="profile-meta-value profile-meta-value--accent">
+        {{ request.user.userprofile.daily_risk_limit_pct }}%
+      </div>
+    </div>
+
+    <div class="surface-card section-card profile-flags-card">
+      <div class="profile-flag {% if request.user.userprofile.notify_email %}profile-flag--on{% endif %}">
+        <i class="bi bi-envelope"></i>
+        <span>Email notifications</span>
+        <span class="profile-flag__pill">{% if request.user.userprofile.notify_email %}On{% else %}Off{% endif %}</span>
+      </div>
+      <div class="profile-flag {% if request.user.userprofile.notify_sound %}profile-flag--on{% endif %}">
+        <i class="bi bi-bell"></i>
+        <span>Sound notifications</span>
+        <span class="profile-flag__pill">{% if request.user.userprofile.notify_sound %}On{% else %}Off{% endif %}</span>
+      </div>
+      <div class="profile-flag {% if request.user.userprofile.two_factor_enabled %}profile-flag--on{% endif %}">
+        <i class="bi bi-shield-check"></i>
+        <span>Two-factor auth</span>
+        <span class="profile-flag__pill">{% if request.user.userprofile.two_factor_enabled %}On{% else %}Off{% endif %}</span>
+      </div>
+    </div>
+
+  </aside>
+
+  {# ── RIGHT: Edit form ── #}
+  <div class="profile-main">
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      {# Account section #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Account</span>
+          <p class="section-subcopy mb-0">Your login credentials and contact details.</p>
         </div>
 
-        <hr class="my-4">
+        <div class="profile-form-grid">
+          <div class="profile-form-field">
+            <label class="form-label" for="{{ uform.first_name.id_for_label }}">First name</label>
+            {{ uform.first_name }}
+            {% if uform.first_name.errors %}
+              <div class="profile-field-error">{{ uform.first_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="profile-form-field">
+            <label class="form-label" for="{{ uform.last_name.id_for_label }}">Last name</label>
+            {{ uform.last_name }}
+            {% if uform.last_name.errors %}
+              <div class="profile-field-error">{{ uform.last_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="profile-form-field profile-form-field--full">
+            <label class="form-label" for="{{ uform.email.id_for_label }}">Email address</label>
+            {{ uform.email }}
+            {% if uform.email.errors %}
+              <div class="profile-field-error">{{ uform.email.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
 
-        <h5 class="mb-3">Profile</h5>
-        <div class="row g-3">
-          <div class="col-md-6">{{ pform.display_name.label_tag }} {{ pform.display_name }}</div>
-          <div class="col-md-6">{{ pform.timezone.label_tag }} {{ pform.timezone }}</div>
-          <div class="col-md-12">{{ pform.bio.label_tag }} {{ pform.bio }}</div>
-          <div class="col-md-12">{{ pform.preferred_assets.label_tag }} {{ pform.preferred_assets }}</div>
-          <div class="col-md-6">{{ pform.daily_risk_limit_pct.label_tag }} {{ pform.daily_risk_limit_pct }}</div>
-          <div class="col-md-12">
-            <label class="form-label d-block">Avatar</label>
+      {# Profile section #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Profile</span>
+          <p class="section-subcopy mb-0">Display name, trading preferences, and avatar.</p>
+        </div>
+
+        <div class="profile-form-grid">
+          <div class="profile-form-field">
+            <label class="form-label" for="{{ pform.display_name.id_for_label }}">Display name</label>
+            {{ pform.display_name }}
+            {% if pform.display_name.errors %}
+              <div class="profile-field-error">{{ pform.display_name.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="profile-form-field">
+            <label class="form-label" for="{{ pform.timezone.id_for_label }}">Timezone</label>
+            {{ pform.timezone }}
+            {% if pform.timezone.errors %}
+              <div class="profile-field-error">{{ pform.timezone.errors.0 }}</div>
+            {% endif %}
+          </div>
+          <div class="profile-form-field profile-form-field--full">
+            <label class="form-label" for="{{ pform.bio.id_for_label }}">Bio</label>
+            {{ pform.bio }}
+          </div>
+          <div class="profile-form-field profile-form-field--full">
+            <label class="form-label" for="{{ pform.preferred_assets.id_for_label }}">Preferred assets</label>
+            {{ pform.preferred_assets }}
+            <div class="profile-field-hint">Comma-separated, e.g. BTCUSD, XAUUSD, US100</div>
+          </div>
+          <div class="profile-form-field">
+            <label class="form-label" for="{{ pform.daily_risk_limit_pct.id_for_label }}">Daily risk limit (%)</label>
+            {{ pform.daily_risk_limit_pct }}
+          </div>
+          <div class="profile-form-field">
+            <label class="form-label">Avatar</label>
             {{ pform.avatar }}
           </div>
-          <div class="col-md-12 form-check mt-2">
-            {{ pform.notify_email }} <label class="form-check-label">Email notifications</label>
-          </div>
-          <div class="col-md-12 form-check">
-            {{ pform.notify_sound }} <label class="form-check-label">Sound notifications</label>
-          </div>
-          <div class="col-md-12 form-check">
-            {{ pform.two_factor_enabled }} <label class="form-check-label">Enable 2FA</label>
-          </div>
+        </div>
+      </div>
+
+      {# Notifications & security #}
+      <div class="surface-card section-card profile-form-card">
+        <div class="profile-form-section-header">
+          <span class="profile-form-section-label">Notifications & security</span>
+          <p class="section-subcopy mb-0">Control alerts and account security settings.</p>
         </div>
 
-        <div class="mt-4">
-          <button class="btn btn-primary">Save Changes</button>
+        <div class="profile-toggle-list">
+          <label class="profile-toggle">
+            {{ pform.notify_email }}
+            <div class="profile-toggle__body">
+              <div class="profile-toggle__title">Email notifications</div>
+              <div class="profile-toggle__desc">Receive account and session alerts via email.</div>
+            </div>
+          </label>
+          <label class="profile-toggle">
+            {{ pform.notify_sound }}
+            <div class="profile-toggle__body">
+              <div class="profile-toggle__title">Sound notifications</div>
+              <div class="profile-toggle__desc">Play sounds for in-app events and alerts.</div>
+            </div>
+          </label>
+          <label class="profile-toggle">
+            {{ pform.two_factor_enabled }}
+            <div class="profile-toggle__body">
+              <div class="profile-toggle__title">Two-factor authentication</div>
+              <div class="profile-toggle__desc">Add an extra layer of security to your login.</div>
+            </div>
+          </label>
         </div>
-      </form>
-    </div>
+      </div>
+
+      {# Actions #}
+      <div class="profile-actions">
+        <button class="btn btn-primary" type="submit">
+          <i class="bi bi-check2-circle"></i>Save changes
+        </button>
+        <a href="{% url 'core:profile' %}" class="btn btn-soft">
+          <i class="bi bi-arrow-left"></i>Cancel
+        </a>
+        <a href="{% url 'password_change' %}" class="btn btn-soft" style="margin-left:auto">
+          <i class="bi bi-key"></i>Change password
+        </a>
+      </div>
+
+    </form>
   </div>
+
 </div>
 {% endblock %}

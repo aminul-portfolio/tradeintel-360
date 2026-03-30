@@ -2,8 +2,8 @@ import csv
 import os
 from io import BytesIO, StringIO
 
+import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objs as go
 import plotly.offline as opy
 from django.contrib import messages
@@ -21,51 +21,93 @@ from .models import TradingFile
 from .utils import compute_kpis
 
 
-# ─────────────────────────────────────────────
-# DARK THEME HELPER
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
+# CHART CONFIG
+# displayModeBar: False hides the Plotly toolbar — the single biggest
+# signal that breaks the premium feel.
+# ─────────────────────────────────────────────────────────────────────
+CHART_CONFIG = {
+    "displayModeBar": False,
+    "responsive":     True,
+    "staticPlot":     False,
+}
 
+# ─────────────────────────────────────────────────────────────────────
+# DESIGN TOKENS — keep in sync with tradeintel_design_system.css
+# ─────────────────────────────────────────────────────────────────────
+T = {
+    "bg_card":    "#121827",
+    "bg_surface": "#0e1420",
+    "bg_hover":   "#1a2236",
+    "text_1":     "#f0f4ff",
+    "text_2":     "#8896b3",
+    "text_3":     "#4a5470",
+    "accent":     "#00e5b4",
+    "green":      "#22c55e",
+    "red":        "#f43f5e",
+    "amber":      "#f59e0b",
+    "border":     "rgba(255,255,255,0.07)",
+    "font":       "IBM Plex Mono, monospace",
+}
+
+PIE_COLORS = [
+    "#00e5b4", "#2a7fff", "#f59e0b", "#f43f5e",
+    "#a78bfa", "#34d399", "#fb923c", "#60a5fa",
+    "#e879f9", "#facc15", "#4ade80", "#f87171",
+]
+PIE_OTHER_COLOR = "#4a5470"
+PIE_THRESHOLD   = 2.5
+
+
+# ─────────────────────────────────────────────────────────────────────
+# DARK THEME HELPER
+# Pass title="" (default) when the template's .chart-shell__title
+# already labels the chart — avoids the duplicate title issue.
+# ─────────────────────────────────────────────────────────────────────
 def _apply_dark_theme(fig, title: str = "") -> None:
-    """Apply the TradeIntel dark theme to any Plotly figure in-place."""
     fig.update_layout(
         title=dict(
-            text=title,
-            font=dict(family="IBM Plex Mono, monospace", size=11, color="#4a5470"),
+            text=title.upper() if title else "",
+            x=0.0,
+            xanchor="left",
+            pad=dict(l=4),
+            font=dict(family=T["font"], size=9, color=T["text_3"]),
         ),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="IBM Plex Mono, monospace", color="#8896b3", size=11),
+        font=dict(family=T["font"], color=T["text_2"], size=10),
         xaxis=dict(
-            gridcolor="rgba(255,255,255,0.05)",
+            gridcolor="rgba(255,255,255,0.04)",
             linecolor="rgba(255,255,255,0.07)",
             tickcolor="rgba(255,255,255,0.07)",
+            tickfont=dict(size=9, color=T["text_3"]),
             zeroline=False,
         ),
         yaxis=dict(
-            gridcolor="rgba(255,255,255,0.05)",
+            gridcolor="rgba(255,255,255,0.04)",
             linecolor="rgba(255,255,255,0.07)",
             tickcolor="rgba(255,255,255,0.07)",
+            tickfont=dict(size=9, color=T["text_3"]),
             zeroline=False,
         ),
-        margin=dict(l=8, r=8, t=36 if title else 8, b=8),
+        margin=dict(l=8, r=8, t=8, b=8),
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
-            bordercolor="rgba(255,255,255,0.07)",
+            bordercolor=T["border"],
             borderwidth=1,
-            font=dict(size=10, color="#8896b3"),
+            font=dict(size=9, color=T["text_2"]),
         ),
         hoverlabel=dict(
-            bgcolor="#1a2236",
+            bgcolor=T["bg_hover"],
             bordercolor="rgba(255,255,255,0.12)",
-            font=dict(family="IBM Plex Mono, monospace", size=11, color="#f0f4ff"),
+            font=dict(family=T["font"], size=11, color=T["text_1"]),
         ),
     )
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
 # SMALL HELPERS
-# ─────────────────────────────────────────────
-
+# ─────────────────────────────────────────────────────────────────────
 def _query_without(request, *keys):
     q = request.GET.copy()
     for key in keys:
@@ -81,7 +123,6 @@ def _first_present(columns, candidates):
 
 
 def _read_session_df(cleaned_data):
-    """Safely load the cleaned session dataset. Returns a DataFrame or None."""
     if not cleaned_data:
         return None
     try:
@@ -110,8 +151,8 @@ def _safe_compute_kpis(df):
 def _is_trade_like_df(df):
     if df is None or df.empty:
         return False
-    trade_like_markers = ["Open", "Open Time", "Date", "Symbol", "Type", "Side", "Profit"]
-    return any(col in df.columns for col in trade_like_markers)
+    markers = ["Open", "Open Time", "Date", "Symbol", "Type", "Side", "Profit"]
+    return any(col in df.columns for col in markers)
 
 
 def _smart_filter_df(df: pd.DataFrame, q: str) -> pd.DataFrame:
@@ -155,22 +196,110 @@ def _smart_filter_df(df: pd.DataFrame, q: str) -> pd.DataFrame:
     return df[mask]
 
 
-# ─────────────────────────────────────────────
-# MAIN VIEWS
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
+# PIE CHART BUILDER
+# ─────────────────────────────────────────────────────────────────────
+def _build_pie(title: str, labels: list, values: list) -> str:
+    total = sum(values) or 1
+    pcts  = [v / total * 100 for v in values]
 
+    main_labels, main_values, main_pcts = [], [], []
+    other_total = 0.0
+
+    for lbl, val, p in zip(labels, values, pcts):
+        if p >= PIE_THRESHOLD:
+            main_labels.append(lbl)
+            main_values.append(val)
+            main_pcts.append(p)
+        else:
+            other_total += val
+
+    if other_total > 0:
+        main_labels.append("Other")
+        main_values.append(other_total)
+        main_pcts.append(other_total / total * 100)
+
+    colors    = []
+    color_idx = 0
+    for lbl in main_labels:
+        if lbl == "Other":
+            colors.append(PIE_OTHER_COLOR)
+        else:
+            colors.append(PIE_COLORS[color_idx % len(PIE_COLORS)])
+            color_idx += 1
+
+    max_pct = max(main_pcts) if main_pcts else 0
+    pull    = [0.04 if p == max_pct else 0 for p in main_pcts]
+
+    fig = go.Figure(data=[go.Pie(
+        labels=main_labels,
+        values=main_values,
+        hole=0.52,
+        sort=True,
+        direction="clockwise",
+        textinfo="none",
+        hovertemplate=(
+            "<b>%{label}</b><br>"
+            "%{percent:.1%}<br>"
+            "Count: %{value}<extra></extra>"
+        ),
+        marker=dict(
+            colors=colors,
+            line=dict(color=T["bg_card"], width=2),
+        ),
+        pull=pull,
+    )])
+
+    fig.update_layout(
+        title=dict(
+            text=title.upper(),
+            x=0.0,
+            xanchor="left",
+            pad=dict(l=4),
+            font=dict(family=T["font"], size=9, color=T["text_3"]),
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=T["font"], color=T["text_2"], size=10),
+        margin=dict(l=16, r=16, t=32, b=16),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            font=dict(size=9, color=T["text_2"]),
+            orientation="h",
+            x=0.5,
+            xanchor="center",
+            y=-0.08,
+            itemwidth=80,
+            entrywidth=120,
+        ),
+        hoverlabel=dict(
+            bgcolor=T["bg_hover"],
+            bordercolor="rgba(255,255,255,0.12)",
+            font=dict(family=T["font"], size=11, color=T["text_1"]),
+        ),
+        height=420,
+        autosize=True,
+    )
+
+    return opy.plot(fig, auto_open=False, output_type="div", config=CHART_CONFIG)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# MAIN VIEWS
+# ─────────────────────────────────────────────────────────────────────
 @login_required
 def dashboard(request):
     cleaned_data = request.session.get("cleaned_data")
     df = _read_session_df(cleaned_data)
 
-    df_html        = None
-    kpis           = {}
-    chart_equity   = None
-    chart_profit   = None
-    chart_hist     = None
-    chart_month    = None
-    trade_page     = None
+    df_html            = None
+    kpis               = {}
+    chart_equity       = None
+    chart_profit       = None
+    chart_hist         = None
+    chart_month        = None
+    trade_page         = None
     chart_pie_sections = {}
 
     filter_form = FilterForm(request.GET or None)
@@ -181,7 +310,7 @@ def dashboard(request):
     if df is not None and not df.empty:
         working_df = df.copy()
 
-        # ── Date / symbol filters ──
+        # ── Filters ───────────────────────────────────────────────────
         if filter_form.is_valid():
             start_date = filter_form.cleaned_data.get("start_date")
             end_date   = filter_form.cleaned_data.get("end_date")
@@ -206,10 +335,10 @@ def dashboard(request):
         if trade_q:
             working_df = _smart_filter_df(working_df, trade_q)
 
-        # ── Paginated trade table ──
-        trade_paginator  = Paginator(working_df.to_dict("records"), 10)
-        trade_page       = trade_paginator.get_page(request.GET.get("trade_page"))
-        df_page          = pd.DataFrame(trade_page.object_list)
+        # ── Trade table ───────────────────────────────────────────────
+        trade_paginator = Paginator(working_df.to_dict("records"), 10)
+        trade_page      = trade_paginator.get_page(request.GET.get("trade_page"))
+        df_page         = pd.DataFrame(trade_page.object_list)
 
         if not df_page.empty:
             df_html = df_page.to_html(
@@ -219,130 +348,138 @@ def dashboard(request):
 
         kpis = _safe_compute_kpis(working_df)
 
-        # ── Charts ──
+        # ── Charts ────────────────────────────────────────────────────
         if "Profit" in working_df.columns:
             working_df["Profit"] = pd.to_numeric(working_df["Profit"], errors="coerce")
 
-            # Determine date column for monthly chart
             maybe_date = None
             for col in ["Open", "Open Time", "Date"]:
                 if col in working_df.columns and pd.api.types.is_datetime64_any_dtype(working_df[col]):
                     maybe_date = col
                     break
 
-            # Monthly bar chart
+            # Monthly P&L ─────────────────────────────────────────────
             if maybe_date:
                 df_month = working_df.dropna(subset=[maybe_date]).copy()
                 if not df_month.empty:
-                    monthly_profit = (
+                    monthly = (
                         df_month
                         .groupby(df_month[maybe_date].dt.to_period("M").astype(str))["Profit"]
                         .sum()
                         .reset_index(name="Profit")
                     )
-                    monthly_profit.rename(columns={monthly_profit.columns[0]: "Month"}, inplace=True)
+                    monthly.rename(columns={monthly.columns[0]: "Month"}, inplace=True)
 
-                    colors_monthly = [
-                        "#22c55e" if v >= 0 else "#f43f5e"
-                        for v in monthly_profit["Profit"]
-                    ]
-                    fig_month = go.Figure(
-                        data=[go.Bar(
-                            x=monthly_profit["Month"],
-                            y=monthly_profit["Profit"],
-                            marker_color=colors_monthly,
-                        )]
-                    )
+                    fig_month = go.Figure(data=[go.Bar(
+                        x=monthly["Month"],
+                        y=monthly["Profit"],
+                        marker_color=[T["green"] if v >= 0 else T["red"] for v in monthly["Profit"]],
+                        marker_line_width=0,
+                        hovertemplate="<b>%{x}</b><br>P&L: %{y:,.2f}<extra></extra>",
+                    )])
+                    # No title arg — template .chart-shell__title handles it
                     _apply_dark_theme(fig_month)
-                    chart_month = opy.plot(fig_month, auto_open=False, output_type="div")
+                    chart_month = opy.plot(
+                        fig_month, auto_open=False, output_type="div", config=CHART_CONFIG
+                    )
 
-            # Equity curve
+            # Equity curve ────────────────────────────────────────────
             working_df["Cumulative Profit"] = working_df["Profit"].fillna(0).cumsum()
-            fig_equity = go.Figure(
-                data=[go.Scatter(
-                    x=list(range(len(working_df))),
-                    y=working_df["Cumulative Profit"],
-                    mode="lines",
-                    line=dict(color="#00e5b4", width=1.5),
-                    fill="tozeroy",
-                    fillcolor="rgba(0,229,180,0.07)",
-                )]
-            )
+            total_pnl = working_df["Cumulative Profit"].iloc[-1] if len(working_df) else 0
+
+            fig_equity = go.Figure(data=[go.Scatter(
+                x=list(range(len(working_df))),
+                y=working_df["Cumulative Profit"],
+                mode="lines",
+                line=dict(
+                    color=T["green"] if total_pnl >= 0 else T["red"],
+                    width=1.5,
+                ),
+                fill="tozeroy",
+                fillcolor=(
+                    "rgba(34,197,94,0.07)" if total_pnl >= 0
+                    else "rgba(244,63,94,0.07)"
+                ),
+                hovertemplate="Trade %{x}<br>Cumulative: %{y:,.2f}<extra></extra>",
+            )])
             _apply_dark_theme(fig_equity)
-            chart_equity = opy.plot(fig_equity, auto_open=False, output_type="div")
+            fig_equity.add_hline(
+                y=0,
+                line_dash="dot",
+                line_color="rgba(255,255,255,0.1)",
+                line_width=1,
+            )
+            chart_equity = opy.plot(
+                fig_equity, auto_open=False, output_type="div", config=CHART_CONFIG
+            )
 
-            # Profit per trade bars
+            # Profit per trade ────────────────────────────────────────
             profit_vals = working_df["Profit"].fillna(0).tolist()
-            colors_profit = ["#22c55e" if v >= 0 else "#f43f5e" for v in profit_vals]
-            fig_profit = go.Figure(
-                data=[go.Bar(
-                    x=list(range(len(working_df))),
-                    y=profit_vals,
-                    marker_color=colors_profit,
-                )]
-            )
+            fig_profit = go.Figure(data=[go.Bar(
+                x=list(range(len(working_df))),
+                y=profit_vals,
+                marker_color=[T["green"] if v >= 0 else T["red"] for v in profit_vals],
+                marker_line_width=0,
+                hovertemplate="Trade %{x}<br>P&L: %{y:,.2f}<extra></extra>",
+            )])
             _apply_dark_theme(fig_profit)
-            chart_profit = opy.plot(fig_profit, auto_open=False, output_type="div")
-
-            # Profit distribution histogram
-            fig_hist = go.Figure(
-                data=[go.Histogram(
-                    x=working_df["Profit"].dropna(),
-                    nbinsx=30,
-                    marker_color="#00e5b4",
-                    opacity=0.85,
-                )]
+            fig_profit.add_hline(
+                y=0,
+                line_dash="dot",
+                line_color="rgba(255,255,255,0.1)",
+                line_width=1,
             )
-            _apply_dark_theme(fig_hist)
-            chart_hist = opy.plot(fig_hist, auto_open=False, output_type="div")
+            chart_profit = opy.plot(
+                fig_profit, auto_open=False, output_type="div", config=CHART_CONFIG
+            )
 
-            # ── Pie / breakdown charts ──
+            # Profit distribution histogram ───────────────────────────
+            # Pre-binned with numpy so zero is always a bin edge — no
+            # overlapping traces, no muddy bars around zero.
+            profit_clean = working_df["Profit"].dropna()
+
+            if not profit_clean.empty:
+                p_min   = profit_clean.min()
+                p_max   = profit_clean.max()
+                n_bins  = 40
+                abs_max = max(abs(p_min), abs(p_max))
+
+                # Symmetric bins centred on zero
+                bins              = np.linspace(-abs_max, abs_max, n_bins + 1)
+                counts, edges     = np.histogram(profit_clean, bins=bins)
+                midpoints         = (edges[:-1] + edges[1:]) / 2
+                bar_width         = float(edges[1] - edges[0])
+
+                # Green for profit bins, red for loss bins
+                bar_colors = [T["green"] if m >= 0 else T["red"] for m in midpoints]
+
+                fig_hist = go.Figure(data=[go.Bar(
+                    x=midpoints.tolist(),
+                    y=counts.tolist(),
+                    width=bar_width * 0.88,
+                    marker_color=bar_colors,
+                    marker_line_width=0,
+                    hovertemplate="Range: %{x:,.0f}<br>Count: %{y}<extra></extra>",
+                )])
+
+                _apply_dark_theme(fig_hist)
+                fig_hist.add_vline(
+                    x=0,
+                    line_dash="dot",
+                    line_color="rgba(255,255,255,0.15)",
+                    line_width=1,
+                )
+                chart_hist = opy.plot(
+                    fig_hist, auto_open=False, output_type="div", config=CHART_CONFIG
+                )
+
+            # Breakdown pie charts ────────────────────────────────────
             sections = [("Overall", working_df)]
             if "Type" in working_df.columns:
                 sections.extend([
                     ("Buy",  working_df[working_df["Type"].astype(str).str.lower() == "buy"]),
                     ("Sell", working_df[working_df["Type"].astype(str).str.lower() == "sell"]),
                 ])
-
-            def build_pie(title, labels, values):
-                fig_pie = go.Figure(
-                    data=[go.Pie(
-                        labels=labels,
-                        values=values,
-                        hole=0.4,
-                        hoverinfo="label+percent+value",
-                        textinfo="percent",
-                        textfont=dict(size=11, color="#8896b3"),
-                        marker=dict(
-                            colors=px.colors.qualitative.Set3,
-                            line=dict(color="rgba(0,0,0,0)", width=0),
-                        ),
-                    )]
-                )
-                fig_pie.update_layout(
-                    title=dict(
-                        text=title,
-                        font=dict(family="IBM Plex Mono, monospace", size=11, color="#4a5470"),
-                    ),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(family="IBM Plex Mono, monospace", color="#8896b3", size=10),
-                    margin=dict(l=8, r=8, t=40, b=100),
-                    legend=dict(
-                        bgcolor="rgba(0,0,0,0)",
-                        bordercolor="rgba(255,255,255,0.07)",
-                        borderwidth=1,
-                        font=dict(size=9, color="#8896b3"),
-                        orientation="h",
-                        x=0.5, xanchor="center", y=-0.25,
-                    ),
-                    hoverlabel=dict(
-                        bgcolor="#1a2236",
-                        bordercolor="rgba(255,255,255,0.12)",
-                        font=dict(family="IBM Plex Mono, monospace", size=11, color="#f0f4ff"),
-                    ),
-                )
-                return opy.plot(fig_pie, auto_open=False, output_type="div")
 
             for label, section_df in sections:
                 if (
@@ -368,7 +505,7 @@ def dashboard(request):
                 wins   = list(win_loss["Wins"])   if "Wins"   in win_loss.columns else []
                 losses = list(win_loss["Losses"]) if "Losses" in win_loss.columns else []
 
-                chart_pie_sections[f"{label.lower()}_count"] = build_pie(
+                chart_pie_sections[f"{label.lower()}_count"] = _build_pie(
                     title=f"{label} Win/Loss Count by Pair",
                     labels=(
                         [f"{s} Wins"   for s in win_loss.index] +
@@ -407,10 +544,9 @@ def dashboard(request):
     })
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
 # UPLOAD
-# ─────────────────────────────────────────────
-
+# ─────────────────────────────────────────────────────────────────────
 @login_required
 def upload_file(request):
     if request.method == "POST":
@@ -442,10 +578,9 @@ def upload_file(request):
     return render(request, "performance/upload_file.html", {"form": form})
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
 # ADMIN
-# ─────────────────────────────────────────────
-
+# ─────────────────────────────────────────────────────────────────────
 @staff_member_required
 def admin_all_files(request):
     file_q = request.GET.get("file_q", "").strip()
@@ -488,10 +623,9 @@ def load_file(request, file_id: int):
     return redirect("performance:dashboard")
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
 # EXPORTS
-# ─────────────────────────────────────────────
-
+# ─────────────────────────────────────────────────────────────────────
 @login_required
 def download_cleaned_csv(request):
     df = _read_session_df(request.session.get("cleaned_data"))
@@ -531,24 +665,18 @@ def download_pdf(request):
     is_trade_like = _is_trade_like_df(df)
     kpis          = _safe_compute_kpis(df)
 
-    def choose_report_columns(pdf_df: pd.DataFrame) -> list[str]:
-        preferred_trade_cols = [
+    def choose_report_columns(pdf_df):
+        preferred = [
             "Open Time", "Open", "Date", "Symbol", "Type", "Side",
             "Size", "Volume", "Profit", "Commission", "Swap", "Balance", "Pips",
         ]
-        present_trade_cols = [c for c in preferred_trade_cols if c in pdf_df.columns]
-        if present_trade_cols:
-            return present_trade_cols[:8]
-
-        excluded_keywords = [
-            "shipping", "address", "line1", "line2", "city", "postcode", "country",
-            "stripe", "intent", "charge", "refund", "email",
-        ]
-        compact_cols = [
-            c for c in pdf_df.columns
-            if not any(word in c.lower() for word in excluded_keywords)
-        ]
-        return compact_cols[:8] if compact_cols else list(pdf_df.columns[:8])
+        present = [c for c in preferred if c in pdf_df.columns]
+        if present:
+            return present[:8]
+        excluded = ["shipping", "address", "line1", "line2", "city", "postcode",
+                    "country", "stripe", "intent", "charge", "refund", "email"]
+        compact = [c for c in pdf_df.columns if not any(w in c.lower() for w in excluded)]
+        return compact[:8] if compact else list(pdf_df.columns[:8])
 
     pdf_df = df.copy()
     for col in pdf_df.columns:
@@ -634,17 +762,17 @@ def export_excel(request):
             "Pips", "SL", "TP", "RR", "rr",
             "Tag", "Tags", "Notes", "Comment", "Comments",
         ]
-        present_preferred = [c for c in preferred if c in dataframe.columns]
-        return present_preferred if present_preferred else list(dataframe.columns)
+        present = [c for c in preferred if c in dataframe.columns]
+        return present if present else list(dataframe.columns)
 
     available_columns = get_available_columns(df)
     selected_cols     = request.GET.getlist("cols") if request.GET.getlist("cols") else available_columns
 
     if "download" not in request.GET:
         return render(request, "performance/excel_export.html", {
-            "columns":       available_columns,
-            "selected_cols": selected_cols,
-            "data_ready":    bool(df is not None and not df.empty),
+            "columns":        available_columns,
+            "selected_cols":  selected_cols,
+            "data_ready":     bool(df is not None and not df.empty),
             "available_rows": len(df) if df is not None else 0,
         })
 
@@ -661,10 +789,10 @@ def export_excel(request):
     if date_col:
         working_df[date_col] = pd.to_datetime(working_df[date_col], errors="coerce")
 
-    start_date  = (request.GET.get("start_date") or "").strip()
-    end_date    = (request.GET.get("end_date")   or "").strip()
-    symbol      = (request.GET.get("symbol")     or "").strip()
-    min_rr      = (request.GET.get("min_rr")     or "").strip()
+    start_date   = (request.GET.get("start_date") or "").strip()
+    end_date     = (request.GET.get("end_date")   or "").strip()
+    symbol       = (request.GET.get("symbol")     or "").strip()
+    min_rr       = (request.GET.get("min_rr")     or "").strip()
     include_kpis = "include_kpis" in request.GET
 
     if date_col:
@@ -705,12 +833,12 @@ def export_excel(request):
         export_df.to_excel(writer, index=False, sheet_name="Trades")
 
         pd.DataFrame([
-            {"Field": "Generated At",        "Value": timezone.now().strftime("%Y-%m-%d %H:%M:%S")},
-            {"Field": "Source Rows",          "Value": len(df)},
-            {"Field": "Exported Rows",        "Value": len(export_df)},
-            {"Field": "Date Filter Column",   "Value": date_col or "Not available"},
-            {"Field": "Symbol Filter",        "Value": symbol or "Not set"},
-            {"Field": "Min RR Filter",        "Value": min_rr or "Not set"},
+            {"Field": "Generated At",      "Value": timezone.now().strftime("%Y-%m-%d %H:%M:%S")},
+            {"Field": "Source Rows",        "Value": len(df)},
+            {"Field": "Exported Rows",      "Value": len(export_df)},
+            {"Field": "Date Filter Column", "Value": date_col or "Not available"},
+            {"Field": "Symbol Filter",      "Value": symbol or "Not set"},
+            {"Field": "Min RR Filter",      "Value": min_rr or "Not set"},
         ]).to_excel(writer, index=False, sheet_name="ExportMeta")
 
         if include_kpis:
@@ -736,10 +864,9 @@ def project_one_plan(request):
     return render(request, "performance/project_one_plan.html")
 
 
-# ─────────────────────────────────────────────
-# FILE CLEANING HELPER
-# ─────────────────────────────────────────────
-
+# ─────────────────────────────────────────────────────────────────────
+# FILE CLEANING
+# ─────────────────────────────────────────────────────────────────────
 def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
     """Reads and cleans a CSV/XLSX trading file. Returns a cleaned DataFrame."""
     _, ext = os.path.splitext(file_path)
@@ -755,9 +882,10 @@ def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
         with open(file_path, "r", encoding=encodings[0], errors="ignore") as f:
             sample = f.read(2048)
             try:
-                dialect   = csv.Sniffer().sniff(sample)
+                import csv as _csv
+                dialect   = _csv.Sniffer().sniff(sample)
                 delimiter = dialect.delimiter
-            except csv.Error:
+            except _csv.Error:
                 delimiter = ","
 
         df = None

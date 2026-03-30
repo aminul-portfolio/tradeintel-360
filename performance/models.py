@@ -37,6 +37,3 @@ class TradingFile(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.file.name} ({self.uploaded_at.strftime('%Y-%m-%d')}) [{self.status}]"
-from django.db import models
-
-# Create your models here.

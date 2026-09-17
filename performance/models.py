@@ -1,5 +1,5 @@
+from django.conf import settings
 from django.db import models
-from django.contrib.auth.models import User
 
 
 class TradingFile(models.Model):
@@ -10,10 +10,10 @@ class TradingFile(models.Model):
     ]
 
     user = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='trading_files',
-        verbose_name='User'
+        verbose_name='User',
     )
     uploaded_at = models.DateTimeField(
         auto_now_add=True,

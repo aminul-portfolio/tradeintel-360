@@ -1,4 +1,3 @@
-import csv
 import os
 from io import BytesIO, StringIO
 
@@ -19,7 +18,6 @@ from xhtml2pdf import pisa
 from .forms import FilterForm, TradingFileForm
 from .models import TradingFile
 from .utils import compute_kpis
-
 
 # ─────────────────────────────────────────────────────────────────────
 # CHART CONFIG

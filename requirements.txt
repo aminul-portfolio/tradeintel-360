@@ -7,3 +7,4 @@ xhtml2pdf
 yfinance
 Pillow
 openpyxl
+python-decouple

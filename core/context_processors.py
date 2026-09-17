@@ -1,5 +1,6 @@
 from trading.models import Trade
 
+
 def open_trade_count(request):
     if request.user.is_authenticated:
         count = Trade.objects.filter(user=request.user, exit_price__isnull=True).count()

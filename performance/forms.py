@@ -1,6 +1,8 @@
 from django import forms
+
 from .models import TradingFile
-from django import forms
+
+
 class TradingFileForm(forms.ModelForm):
     class Meta:
         model = TradingFile

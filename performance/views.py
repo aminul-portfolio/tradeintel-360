@@ -1,4 +1,3 @@
-import os
 from io import BytesIO, StringIO
 
 import numpy as np
@@ -16,9 +15,11 @@ from django.utils import timezone
 from xhtml2pdf import pisa
 
 from .forms import FilterForm, TradingFileForm
+from .ingestion import IngestionError, clean_ftmo_csv
 from .models import TradingFile
 from .utils import compute_kpis
 
+CLEANED_DATA_SESSION_KEY = "cleaned_data"
 # ─────────────────────────────────────────────────────────────────────
 # CHART CONFIG
 # displayModeBar: False hides the Plotly toolbar — the single biggest
@@ -288,7 +289,7 @@ def _build_pie(title: str, labels: list, values: list) -> str:
 # ─────────────────────────────────────────────────────────────────────
 @login_required
 def dashboard(request):
-    cleaned_data = request.session.get("cleaned_data")
+    cleaned_data = request.session.get(CLEANED_DATA_SESSION_KEY)
     df = _read_session_df(cleaned_data)
 
     df_html            = None
@@ -551,29 +552,53 @@ def upload_file(request):
         form = TradingFileForm(request.POST, request.FILES)
         if form.is_valid():
             trading_file = form.save(commit=False)
-            trading_file.user   = request.user
+            trading_file.user = request.user
             trading_file.status = "pending"
             trading_file.save()
+
             try:
                 df = clean_ftmo_csv(trading_file.file.path)
                 request.session["last_uploaded_file"] = trading_file.file.name
-                request.session["cleaned_data"] = df.to_json(orient="split", date_format="iso")
+                request.session[CLEANED_DATA_SESSION_KEY] = df.to_json(
+                    orient="split",
+                    date_format="iso",
+                )
+
                 trading_file.status = "processed"
                 trading_file.save(update_fields=["status"])
-                messages.success(request, "File uploaded and processed successfully.")
+
+                messages.success(
+                    request,
+                    "File uploaded and processed successfully.",
+                )
                 return redirect("performance:dashboard")
-            except ValueError as ve:
-                messages.error(request, str(ve))
+
+            except IngestionError as exc:
+                request.session.pop(CLEANED_DATA_SESSION_KEY, None)
+
                 trading_file.status = "error"
                 trading_file.save(update_fields=["status"])
+
+                messages.error(request, str(exc))
+
             except Exception:
-                messages.error(request, "An error occurred while processing your file.")
+                request.session.pop(CLEANED_DATA_SESSION_KEY, None)
+
                 trading_file.status = "error"
                 trading_file.save(update_fields=["status"])
+
+                messages.error(
+                    request,
+                    "An error occurred while processing your file.",
+                )
     else:
         form = TradingFileForm()
 
-    return render(request, "performance/upload_file.html", {"form": form})
+    return render(
+        request,
+        "performance/upload_file.html",
+        {"form": form},
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -610,14 +635,37 @@ def admin_delete_file(request, file_id: int):
 
 @login_required
 def load_file(request, file_id: int):
-    trading_file = get_object_or_404(TradingFile, id=file_id, user=request.user)
+    trading_file = get_object_or_404(
+        TradingFile,
+        id=file_id,
+        user=request.user,
+    )
+
     try:
         df = clean_ftmo_csv(trading_file.file.path)
+
         request.session["last_uploaded_file"] = trading_file.file.name
-        request.session["cleaned_data"] = df.to_json(orient="split", date_format="iso")
-        messages.success(request, f"Loaded {trading_file.file.name} successfully.")
-    except Exception as e:
-        messages.error(request, f"Error loading file: {e}")
+        request.session[CLEANED_DATA_SESSION_KEY] = df.to_json(
+            orient="split",
+            date_format="iso",
+        )
+
+        messages.success(
+            request,
+            f"Loaded {trading_file.file.name} successfully.",
+        )
+
+    except IngestionError as exc:
+        request.session.pop(CLEANED_DATA_SESSION_KEY, None)
+        messages.error(request, str(exc))
+
+    except Exception:
+        request.session.pop(CLEANED_DATA_SESSION_KEY, None)
+        messages.error(
+            request,
+            "An error occurred while loading the trading file.",
+        )
+
     return redirect("performance:dashboard")
 
 
@@ -626,7 +674,7 @@ def load_file(request, file_id: int):
 # ─────────────────────────────────────────────────────────────────────
 @login_required
 def download_cleaned_csv(request):
-    df = _read_session_df(request.session.get("cleaned_data"))
+    df = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
     if df is None or df.empty:
         return HttpResponse("No cleaned session data is available.", status=400)
 
@@ -637,7 +685,7 @@ def download_cleaned_csv(request):
 
 @login_required
 def download_excel(request):
-    df = _read_session_df(request.session.get("cleaned_data"))
+    df = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
     if df is None or df.empty:
         return HttpResponse("No cleaned session data is available.", status=400)
 
@@ -656,7 +704,7 @@ def download_excel(request):
 
 @login_required
 def download_pdf(request):
-    df = _read_session_df(request.session.get("cleaned_data"))
+    df = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
     if df is None or df.empty:
         return HttpResponse("No data available.", status=400)
 
@@ -715,7 +763,9 @@ def download_pdf(request):
 
 @login_required
 def kpi_report(request):
-    df   = _read_session_df(request.session.get("cleaned_data"))
+    df = _read_session_df(
+        request.session.get(CLEANED_DATA_SESSION_KEY)
+    )
     kpis = _safe_compute_kpis(df)
 
     kpi_rows = [{"metric": k, "value": v} for k, v in (kpis or {}).items()]
@@ -747,7 +797,7 @@ def export_excel(request):
         "entry", "exit", "sl", "tp", "pnl", "rr", "tag", "notes",
     ]
 
-    df = _read_session_df(request.session.get("cleaned_data"))
+    df = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
 
     def get_available_columns(dataframe):
         if dataframe is None or dataframe.empty:
@@ -860,56 +910,3 @@ def export_excel(request):
 
 def project_one_plan(request):
     return render(request, "performance/project_one_plan.html")
-
-
-# ─────────────────────────────────────────────────────────────────────
-# FILE CLEANING
-# ─────────────────────────────────────────────────────────────────────
-def clean_ftmo_csv(file_path: str) -> pd.DataFrame:
-    """Reads and cleans a CSV/XLSX trading file. Returns a cleaned DataFrame."""
-    _, ext = os.path.splitext(file_path)
-    ext = ext.lower()
-
-    if ext in [".xlsx", ".xls"]:
-        df = pd.read_excel(file_path)
-
-    elif ext == ".csv":
-        encodings = ["utf-8", "ISO-8859-1"]
-        delimiter = ","
-
-        with open(file_path, "r", encoding=encodings[0], errors="ignore") as f:
-            sample = f.read(2048)
-            try:
-                import csv as _csv
-                dialect   = _csv.Sniffer().sniff(sample)
-                delimiter = dialect.delimiter
-            except _csv.Error:
-                delimiter = ","
-
-        df = None
-        for enc in encodings:
-            try:
-                df = pd.read_csv(file_path, encoding=enc, delimiter=delimiter, on_bad_lines="skip")
-                break
-            except UnicodeDecodeError:
-                continue
-
-        if df is None:
-            raise ValueError("Unable to read the CSV file with supported encodings.")
-
-    else:
-        raise ValueError("Unsupported file format. Please upload a CSV or Excel file.")
-
-    df.dropna(how="all", inplace=True)
-    df.columns = [c.strip() for c in df.columns]
-
-    for date_col in ["Open Time", "Open", "Date"]:
-        if date_col in df.columns:
-            df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-            break
-
-    for col in ["Size", "Profit", "Commission", "Swap", "Balance", "Pips", "Volume"]:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    return df

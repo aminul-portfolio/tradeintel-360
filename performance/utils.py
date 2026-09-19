@@ -71,8 +71,15 @@ def compute_kpis(df: pd.DataFrame) -> dict:
     worst_trade = profit.min() if total_trades > 0 else 0.0
 
     cumulative_profit = profit.cumsum()
-    running_peak = cumulative_profit.cummax()
-    drawdown = cumulative_profit - running_peak
+    cumulative_with_baseline = pd.concat(
+        [
+            pd.Series([0.0]),
+            cumulative_profit,
+        ],
+        ignore_index=True,
+    )
+    running_peak = cumulative_with_baseline.cummax()
+    drawdown = cumulative_with_baseline - running_peak
     max_drawdown = abs(drawdown.min()) if not drawdown.empty else 0.0
 
     volatility = profit.std(ddof=1) if total_trades > 1 else 0.0

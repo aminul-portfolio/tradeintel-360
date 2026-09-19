@@ -1,8 +1,8 @@
 # TradeIntel 360
 
-**Post-trade performance analytics with a 17-metric KPI engine, configurable Excel and PDF exports, and session-driven analysis workflow.**
+**Post-trade performance analytics with an 18-metric KPI engine, configurable Excel and PDF exports, and session-driven analysis workflow.**
 
-Upload a trade history CSV or Excel file — TradeIntel 360 cleans it, computes a 17-metric KPI suite, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
+Upload a trade history CSV or Excel file — TradeIntel 360 cleans it, computes an 18-metric KPI suite, and surfaces the results across an interactive dashboard, a structured report view, and configurable export outputs. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
 
 
 <br>
@@ -32,7 +32,7 @@ Upload a trade history CSV or Excel file — TradeIntel 360 cleans it, computes 
 | Area | Detail |
 |---|---|
 | **Data pipeline** | Ingest raw CSV/XLSX → clean → normalise → session-backed analysis workflow |
-| **KPI engine** | 17 computed metrics: win rate, profit factor, Sharpe, max drawdown, expectancy, and more |
+| **KPI engine** | 18 computed metrics: win rate, profit factor, Sharpe, max drawdown, expectancy, and more |
 | **Django patterns** | Login-gated views, file upload handling, session state, paginated tables, context-driven reporting |
 | **Data visualisation** | Plotly equity curve, P&L distribution, monthly breakdown, segmented win/loss charts |
 | **Export pipeline** | PDF via xhtml2pdf, configurable Excel with optional KPI sheet via openpyxl, cleaned CSV |
@@ -120,7 +120,7 @@ Session-driven: upload once, review across all surfaces without re-uploading. Da
     <td valign="top"
         style="padding:10px 12px 16px 20px;border-right:1px solid #1e2d45;border-top:1px solid #1e2d45">
       <sub><strong>KPI summary panel</strong><br>
-      17 computed metrics with date, symbol, and smart search filters</sub>
+      18 computed metrics with date, symbol, and smart search filters</sub>
     </td>
     <td valign="top"
         style="padding:10px 20px 16px 12px;border-top:1px solid #1e2d45">
@@ -202,6 +202,16 @@ All metrics are computed from the loaded dataset. Applying a date, symbol, or RR
 **Risk metrics** — expectancy, best trade, worst trade, max drawdown
 
 **Statistical** — trade-based Sharpe ratio, per-trade profit volatility
+
+### KPI semantics
+
+- **Win rate** — winning trades divided by all numeric trades, including break-even trades in the denominator.
+- **Expectancy** — mean Profit per trade; equivalent in this implementation to Average Profit.
+- **Gross Loss / Average Loss** — displayed as positive loss magnitudes.
+- **Profit Factor** — Gross Profit divided by Gross Loss. When there are profits but no losses it is shown as `∞`; when both Gross Profit and Gross Loss are zero it is shown as `N/A`.
+- **Max Drawdown** — largest peak-to-trough decline in cumulative Profit, measured from an initial zero P&L baseline.
+- **Volatility** — sample standard deviation of per-trade Profit using `ddof=1`.
+- **Sharpe** — trade-based Average Profit divided by per-trade Profit volatility. It is non-annualised and does not subtract a risk-free rate.
 
 > Sharpe is computed as a trade-series ratio, not an annualised institutional Sharpe. Volatility refers to per-trade profit dispersion.
 

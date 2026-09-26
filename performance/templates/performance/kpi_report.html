@@ -26,6 +26,48 @@
         </div>
       </div>
 
+      {% if analysis_context %}
+      <div class="kpi-report-divider"></div>
+
+      <h2 class="section-heading mb-2">Analysis scope</h2>
+
+      <div class="kpi-report-meta">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Source file</div>
+          <div class="kpi-report-meta__value">{{ analysis_context.source_filename|default:"Session dataset" }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Source rows</div>
+          <div class="kpi-report-meta__value">{{ analysis_context.source_row_count }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Analysed rows</div>
+          <div class="kpi-report-meta__value">{{ analysis_context.filtered_row_count }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Filter state</div>
+          <div class="kpi-report-meta__value">
+            {% if analysis_context.active_filters %}
+              {{ analysis_context.active_filters|length }} active
+            {% else %}
+              Full dataset
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if analysis_context.active_filters %}
+      <div class="mt-3">
+        {% for key, value in analysis_context.active_filters.items %}
+        <span class="signal-badge me-2 mb-2">
+          <i class="bi bi-funnel"></i>
+          {{ key }}: {{ value }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endif %}
+
       <div class="kpi-report-divider"></div>
 
       <h2 class="section-heading mb-2">Reviewer path</h2>
@@ -58,7 +100,7 @@
       <div class="kpi-report-divider"></div>
 
       <div class="kpi-report-actions">
-        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+        <a href="{% url 'performance:dashboard' %}{% if analysis_query %}?{{ analysis_query }}{% endif %}" class="btn btn-soft">
           <i class="bi bi-speedometer2"></i>Back to Dashboard
         </a>
         <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
@@ -76,7 +118,7 @@
       <div class="kpi-report-card-header">
         <div>
           <h2 class="section-heading mb-1">Performance KPI summary</h2>
-          <p class="section-subcopy mb-0">Structured KPI output generated from the currently loaded trade dataset.</p>
+          <p class="section-subcopy mb-0">Structured KPI output generated from the current analysis scope.</p>
         </div>
         <span class="signal-badge">
           <i class="bi bi-table"></i>Report view
@@ -87,11 +129,20 @@
 
       {# Filter bar #}
       <form method="get" class="app-filter-bar mb-4">
+        {% if analysis_context %}
+          {% for key, value in analysis_context.active_filters.items %}
+            <input
+              type="hidden"
+              name="{{ key }}"
+              value="{{ value }}"
+            >
+          {% endfor %}
+        {% endif %}
         <div class="filter-grid" style="grid-template-columns: 1fr auto">
           <div class="filter-field">
             <label class="form-label">KPI filter</label>
             <input type="text" name="kpi_q" value="{{ kpi_q }}"
-                   class="form-control" placeholder="Search KPI name or value…">
+                   class="form-control" placeholder="Search KPI name or value...">
           </div>
           <div class="filter-field" style="justify-content: flex-end; padding-top: 20px;">
             <button class="btn btn-dark" type="submit">
@@ -149,7 +200,7 @@
           <ul class="pagination pagination-sm mb-0">
             {% if kpi_page.has_previous %}
             <li class="page-item">
-              <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.previous_page_number }}">← Prev</a>
+              <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.previous_page_number }}">&lt; Prev</a>
             </li>
             {% endif %}
             <li class="page-item disabled">
@@ -157,7 +208,7 @@
             </li>
             {% if kpi_page.has_next %}
             <li class="page-item">
-              <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.next_page_number }}">Next →</a>
+              <a class="page-link" href="?{{ kpi_query }}{% if kpi_query %}&{% endif %}kpi_page={{ kpi_page.next_page_number }}">Next ></a>
             </li>
             {% endif %}
           </ul>
@@ -166,7 +217,26 @@
       {% endif %}
 
       <div class="note-box mt-3">
-        This summary reflects KPI values generated from the currently loaded trade dataset and the active review workflow.
+        This summary reflects KPI values generated from the current analysis scope and the applied analytical filters.
+      </div>
+
+      {% elif analysis_context and analysis_context.is_zero_result %}
+
+      <div class="empty-state">
+        <div class="empty-state__icon"><i class="bi bi-funnel"></i></div>
+        <h2 class="section-heading mb-2">No trades match the current analysis scope</h2>
+        <p class="section-subcopy mb-4">The dataset is loaded correctly, but the current filters returned zero rows. Adjust or reset the analytical filters to continue.</p>
+        <a href="{% url 'performance:kpi_report' %}" class="btn btn-soft">
+          <i class="bi bi-arrow-counterclockwise"></i>Reset Filters
+        </a>
+      </div>
+
+      {% elif analysis_context %}
+
+      <div class="empty-state">
+        <div class="empty-state__icon"><i class="bi bi-bar-chart"></i></div>
+        <h2 class="section-heading mb-2">No KPI values are available for the current analysis scope.</h2>
+        <p class="section-subcopy mb-0">The current analysis scope contains data, but no supported KPI values could be calculated from it.</p>
       </div>
 
       {% else %}

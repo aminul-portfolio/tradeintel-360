@@ -706,3 +706,312 @@ class DashboardAnalysisIntegrationTests(TestCase):
             "trade_page",
             trade_query,
         )
+
+    def test_kpi_report_shared_analysis_controls_kpi_scope(self):
+        response = self.client.get(
+            reverse("performance:kpi_report"),
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            response.context["kpis"]["Total Trades"],
+            2,
+        )
+        self.assertEqual(
+            dict(context.active_filters),
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+    def test_dashboard_and_kpi_report_have_exact_analysis_parity(self):
+        params = {
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-03",
+            "symbol": "xau",
+            "q": "buy",
+        }
+
+        dashboard_response = self.client.get(
+            self.dashboard_url,
+            params,
+        )
+        report_response = self.client.get(
+            reverse("performance:kpi_report"),
+            params,
+        )
+
+        self.assertEqual(
+            dashboard_response.context["kpis"],
+            report_response.context["kpis"],
+        )
+        self.assertEqual(
+            dashboard_response.context[
+                "analysis_context"
+            ].filtered_row_count,
+            report_response.context[
+                "analysis_context"
+            ].filtered_row_count,
+        )
+
+    def test_kpi_q_filters_display_only_not_analysis(self):
+        analytical_params = {
+            "symbol": "xau",
+            "q": "buy",
+        }
+
+        without_kpi_q = self.client.get(
+            reverse("performance:kpi_report"),
+            analytical_params,
+        )
+        with_kpi_q = self.client.get(
+            reverse("performance:kpi_report"),
+            {
+                **analytical_params,
+                "kpi_q": "profit",
+            },
+        )
+
+        self.assertEqual(
+            without_kpi_q.context["kpis"],
+            with_kpi_q.context["kpis"],
+        )
+        self.assertEqual(
+            without_kpi_q.context[
+                "analysis_context"
+            ].filtered_row_count,
+            with_kpi_q.context[
+                "analysis_context"
+            ].filtered_row_count,
+        )
+        self.assertEqual(
+            dict(
+                without_kpi_q.context[
+                    "analysis_context"
+                ].active_filters
+            ),
+            dict(
+                with_kpi_q.context[
+                    "analysis_context"
+                ].active_filters
+            ),
+        )
+        self.assertNotIn(
+            "kpi_q",
+            with_kpi_q.context[
+                "analysis_context"
+            ].active_filters,
+        )
+
+        without_rows = list(
+            without_kpi_q.context[
+                "kpi_page"
+            ].object_list
+        )
+        with_rows = list(
+            with_kpi_q.context[
+                "kpi_page"
+            ].object_list
+        )
+
+        self.assertNotEqual(
+            without_rows,
+            with_rows,
+        )
+        self.assertLess(
+            len(with_rows),
+            len(without_rows),
+        )
+        self.assertTrue(
+            all(
+                "profit" in str(row["metric"]).lower()
+                or "profit" in str(row["value"]).lower()
+                for row in with_rows
+            )
+        )
+
+        self.assertContains(
+            with_kpi_q,
+            'name="symbol"',
+        )
+        self.assertContains(
+            with_kpi_q,
+            'value="xau"',
+        )
+        self.assertContains(
+            with_kpi_q,
+            'name="q"',
+        )
+        self.assertContains(
+            with_kpi_q,
+            'value="buy"',
+        )
+
+        analysis_query = with_kpi_q.context[
+            "analysis_query"
+        ]
+        expected_href = (
+            reverse("performance:dashboard")
+            + "?"
+            + analysis_query
+        )
+        expected_rendered_href = expected_href.replace(
+            "&",
+            "&amp;",
+        )
+
+        self.assertContains(
+            with_kpi_q,
+            f'href="{expected_rendered_href}"',
+            html=False,
+        )
+        self.assertNotIn(
+            "kpi_q",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "kpi_page",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "file_q",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "file_status",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "page=",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "trade_page",
+            analysis_query,
+        )
+
+    def test_kpi_report_zero_result_preserves_analysis_lineage(self):
+        response = self.client.get(
+            reverse("performance:kpi_report"),
+            {
+                "symbol": "NO-SUCH-SYMBOL",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            0,
+        )
+        self.assertTrue(
+            context.is_zero_result,
+        )
+        self.assertEqual(
+            response.context["kpis"],
+            {},
+        )
+        self.assertContains(
+            response,
+            "No trades match the current analysis scope",
+        )
+        self.assertNotContains(
+            response,
+            "Upload trade history first",
+        )
+
+    def test_kpi_report_analysis_context_is_recomputed_per_request(self):
+        first_response = self.client.get(
+            reverse("performance:kpi_report"),
+            {
+                "symbol": "xau",
+            },
+        )
+
+        first_context = first_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            first_context.filtered_row_count,
+            2,
+        )
+
+        second_response = self.client.get(
+            reverse("performance:kpi_report")
+        )
+
+        second_context = second_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            second_context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            second_context.filtered_row_count,
+            4,
+        )
+        self.assertEqual(
+            dict(second_context.active_filters),
+            {},
+        )
+        self.assertNotIn(
+            "analysis_context",
+            self.client.session,
+        )
+
+    def test_kpi_report_exposes_basename_only_source_filename(self):
+        response = self.client.get(
+            reverse("performance:kpi_report")
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_filename,
+            "history.csv",
+        )
+        self.assertContains(
+            response,
+            "history.csv",
+        )
+        self.assertNotContains(
+            response,
+            r"trading_files\user_4\history.csv",
+        )

@@ -1013,10 +1013,31 @@ def kpi_report(request):
     df = _read_session_df(
         request.session.get(CLEANED_DATA_SESSION_KEY)
     )
-    kpis = _safe_compute_kpis(df)
 
-    kpi_rows = [{"metric": k, "value": v} for k, v in (kpis or {}).items()]
-    kpi_q    = request.GET.get("kpi_q", "").strip()
+    analysis_context = None
+    analysis_query = ""
+    kpis = {}
+
+    if df is not None and not df.empty:
+        working_df, analysis_context = apply_analysis(
+            df,
+            request.GET,
+            source_filename=request.session.get(
+                "last_uploaded_file"
+            ),
+        )
+
+        kpis = _safe_compute_kpis(working_df)
+
+        analysis_query = urlencode(
+            dict(analysis_context.active_filters)
+        )
+
+    kpi_rows = [
+        {"metric": key, "value": value}
+        for key, value in (kpis or {}).items()
+    ]
+    kpi_q = request.GET.get("kpi_q", "").strip()
 
     if kpi_q:
         kpi_rows = [
@@ -1025,15 +1046,27 @@ def kpi_report(request):
             or kpi_q.lower() in str(row["value"]).lower()
         ]
 
-    kpi_page  = Paginator(kpi_rows, 10).get_page(request.GET.get("kpi_page"))
-    kpi_query = _query_without(request, "kpi_page")
+    kpi_page = Paginator(kpi_rows, 10).get_page(
+        request.GET.get("kpi_page")
+    )
+
+    kpi_query_params = {}
+    if analysis_context is not None:
+        kpi_query_params.update(
+            dict(analysis_context.active_filters)
+        )
+    if kpi_q:
+        kpi_query_params["kpi_q"] = kpi_q
+    kpi_query = urlencode(kpi_query_params)
 
     return render(request, "performance/kpi_report.html", {
-        "kpis":         kpis,
-        "kpi_page":     kpi_page,
-        "kpi_q":        kpi_q,
-        "kpi_query":    kpi_query,
+        "kpis": kpis,
+        "kpi_page": kpi_page,
+        "kpi_q": kpi_q,
+        "kpi_query": kpi_query,
         "generated_at": timezone.now(),
+        "analysis_context": analysis_context,
+        "analysis_query": analysis_query,
     })
 
 

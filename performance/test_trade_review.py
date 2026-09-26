@@ -11,8 +11,11 @@ from .trade_review import (
     MOVEMENT_STATUS_DISAGREEMENT,
     MOVEMENT_STATUS_FALLBACK,
     PIPS_MOVEMENT_TOLERANCE,
+    build_trade_review_columns,
+    build_trade_review_rows,
     calculated_movement,
     enrich_trade_review,
+    format_volume_value,
     is_valid_pips,
     normalize_sort_direction,
     normalize_sort_key,
@@ -305,4 +308,97 @@ class TradeReviewSortingTests(SimpleTestCase):
         self.assertEqual(
             list(sorted_df["_movement_label"]),
             [LABEL_PRICE_MOVE, LABEL_PRICE_MOVE],
+        )
+
+
+class TradeReviewVolumeFormattingTests(SimpleTestCase):
+    def test_volume_display_rounding_and_special_values(self):
+        self.assertEqual(
+            format_volume_value(0.30000000000000004),
+            "0.3",
+        )
+        self.assertEqual(format_volume_value(1.2345), "1.23")
+        self.assertEqual(format_volume_value(1.235), "1.24")
+        self.assertEqual(format_volume_value(0.125), "0.13")
+        self.assertEqual(format_volume_value(2.675), "2.68")
+        self.assertEqual(format_volume_value(2.0), "2")
+        self.assertEqual(format_volume_value(100000), "100000")
+        self.assertNotIn("e", format_volume_value(100000).lower())
+        self.assertNotIn("e", format_volume_value(1234567).lower())
+        self.assertEqual(format_volume_value(0.001), "<0.01")
+        self.assertEqual(format_volume_value(-0.001), ">-0.01")
+        self.assertEqual(format_volume_value(None), "")
+        self.assertEqual(format_volume_value(float("nan")), "")
+        self.assertEqual(format_volume_value(float("inf")), "")
+        self.assertEqual(format_volume_value(float("-inf")), "")
+        self.assertEqual(format_volume_value(-0.0), "0")
+        self.assertEqual(format_volume_value("1.235"), "1.24")
+        self.assertEqual(format_volume_value(pd.Series([2], dtype="int64").iloc[0]), "2")
+
+    def test_volume_presenter_does_not_mutate_raw_values(self):
+        raw_volume = 0.30000000000000004
+        frame = pd.DataFrame(
+            {
+                "Ticket": [1],
+                "Volume": [raw_volume],
+                "Profit": [10],
+            }
+        )
+        enriched = enrich_trade_review(frame)
+        rows = build_trade_review_rows(
+            enriched,
+            build_trade_review_columns(enriched),
+        )
+        volume_index = [
+            index
+            for index, column in enumerate(
+                build_trade_review_columns(enriched)
+            )
+            if column["key"] == "volume"
+        ][0]
+
+        self.assertEqual(
+            rows[0]["cells"][volume_index]["value"],
+            "0.3",
+        )
+        self.assertEqual(
+            enriched["Volume"].iloc[0],
+            raw_volume,
+        )
+        self.assertEqual(
+            frame["Volume"].iloc[0],
+            raw_volume,
+        )
+
+    def test_volume_sort_uses_raw_numeric_not_display(self):
+        frame = pd.DataFrame(
+            {
+                "Ticket": [2, 1, 3],
+                "Volume": [1.234, 1.231, 2.0],
+            }
+        )
+        columns = build_trade_review_columns(frame)
+        volume_index = [
+            index
+            for index, column in enumerate(columns)
+            if column["key"] == "volume"
+        ][0]
+        displays = [
+            row["cells"][volume_index]["value"]
+            for row in build_trade_review_rows(frame, columns)
+        ]
+        self.assertEqual(displays[:2], ["1.23", "1.23"])
+
+        sorted_df = sort_trade_review(frame, "volume", "asc")
+        self.assertEqual(
+            list(sorted_df["Volume"]),
+            [1.231, 1.234, 2.0],
+        )
+        self.assertEqual(
+            list(sorted_df["Ticket"]),
+            [1, 2, 3],
+        )
+        self.assertEqual(
+            sorted_df["Volume"].iloc[0],
+            1.231,
         )

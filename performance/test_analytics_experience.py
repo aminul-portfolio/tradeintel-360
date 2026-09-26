@@ -7,6 +7,7 @@ from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .analytics import apply_analysis
+from .trade_review import PIPS_MOVEMENT_TOLERANCE
 
 
 class AnalysisExperienceTests(SimpleTestCase):
@@ -1580,6 +1581,14 @@ class DashboardAnalysisIntegrationTests(TestCase):
                 for index in range(rows)
             ],
             "Profit": [10 * (rows - index) for index in range(rows)],
+            "Volume": [
+                0.30000000000000004
+                if index == 2
+                else 100000
+                if index == 1
+                else 1.0 + index
+                for index in range(rows)
+            ],
             "Pips": [
                 10.0 if index < 2 else None
                 for index in range(rows)
@@ -1807,3 +1816,204 @@ class DashboardAnalysisIntegrationTests(TestCase):
         self.assertIn("Pips", notes)
         self.assertIn("Price Move", notes)
         self.assertContains(response, "Realised movement")
+
+    def _trade_review_markup(self, content):
+        match = re.search(
+            r'<section class="dash-section" id="trade-review">(.*?)</section>',
+            content,
+            re.S,
+        )
+        self.assertIsNotNone(match)
+        return match.group(1)
+
+    def test_trade_review_volume_display_and_fragment_navigation(self):
+        self._load_trade_review_session(12)
+
+        inactive = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "usd",
+            },
+        )
+        inactive_html = inactive.content.decode()
+        inactive_review = self._trade_review_markup(inactive_html)
+        volume_column = None
+        for column in inactive.context["trade_review_columns"]:
+            if column["key"] == "volume":
+                volume_column = column
+                break
+        self.assertIsNotNone(volume_column)
+        volume_href = None
+        for match in re.finditer(
+            r'<a\s+class="trade-review-sort"\s+href="([^"]+)"\s+aria-label="([^"]+)"',
+            inactive_review,
+        ):
+            href, label = match.groups()
+            if "trade_sort=volume" in href.replace("&amp;", "&"):
+                volume_href = href
+                self.assertEqual(
+                    label,
+                    "Sort by Volume, ascending",
+                )
+        self.assertIsNotNone(volume_href)
+        self.assertTrue(volume_href.endswith("#trade-review"))
+        self.assertEqual(volume_href.count("#trade-review"), 1)
+        self.assertNotIn("%23trade-review", volume_href)
+        self.assertNotIn("trade_page", volume_href.replace("&amp;", "&"))
+        self.assertIn("symbol=usd", volume_href.replace("&amp;", "&"))
+
+        sort_hrefs = re.findall(
+            r'class="trade-review-sort"[^>]*href="([^"]+)"',
+            inactive_review,
+        )
+        self.assertTrue(sort_hrefs)
+        for href in sort_hrefs:
+            self.assertTrue(href.endswith("#trade-review"))
+            self.assertEqual(href.count("#trade-review"), 1)
+            self.assertNotIn("%23trade-review", href)
+            self.assertNotIn("trade_page", href.replace("&amp;", "&"))
+
+        self.assertEqual(inactive_html.count('id="trade-review"'), 1)
+        self.assertNotIn(
+            "#trade-review",
+            re.search(
+                r'<form method="get" class="app-filter-bar".*?</form>',
+                inactive_html,
+                re.S,
+            ).group(0),
+        )
+        reset_hrefs = re.findall(
+            r'href="([^"]+)"[^>]*>[\s\S]*?Reset',
+            inactive_html,
+        )
+        for href in reset_hrefs:
+            self.assertNotIn("#trade-review", href)
+
+        volume_index = self._trade_column_index(inactive, "volume")
+        displayed_volumes = [
+            row["cells"][volume_index]["value"]
+            for row in inactive.context["trade_page"].object_list
+        ]
+        self.assertIn("0.3", displayed_volumes)
+        self.assertIn("100000", displayed_volumes)
+        self.assertNotIn("0.30000000000000004", displayed_volumes)
+        self.assertFalse(
+            any("e" in str(value).lower() for value in displayed_volumes)
+        )
+
+        active_asc = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "usd",
+                "trade_sort": "volume",
+                "trade_dir": "asc",
+            },
+        )
+        active_asc_review = self._trade_review_markup(
+            active_asc.content.decode()
+        )
+        self.assertIn('aria-sort="ascending"', active_asc_review)
+        self.assertIn('aria-sort="none"', active_asc_review)
+        self.assertIn(
+            'aria-label="Sort by Volume, descending"',
+            active_asc_review,
+        )
+        self.assertIn('aria-hidden="true"', active_asc_review)
+        self.assertIn(
+            'class="trade-review-sort-indicator"',
+            active_asc_review,
+        )
+
+        active_volume_href = None
+        for href in re.findall(
+            r'class="trade-review-sort"[^>]*href="([^"]+)"',
+            active_asc_review,
+        ):
+            if "trade_sort=volume" in href.replace("&amp;", "&"):
+                active_volume_href = href
+        self.assertIsNotNone(active_volume_href)
+        self.assertTrue(active_volume_href.endswith("#trade-review"))
+        self.assertEqual(active_volume_href.count("#trade-review"), 1)
+        self.assertNotIn("%23trade-review", active_volume_href)
+        self.assertNotIn(
+            "trade_page",
+            active_volume_href.replace("&amp;", "&"),
+        )
+
+        active_desc = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "usd",
+                "trade_sort": "volume",
+                "trade_dir": "desc",
+                "trade_page": "2",
+            },
+        )
+        active_desc_html = active_desc.content.decode()
+        active_desc_review = self._trade_review_markup(active_desc_html)
+        self.assertIn('aria-sort="descending"', active_desc_review)
+        self.assertIn(
+            'aria-label="Sort by Volume, ascending"',
+            active_desc_review,
+        )
+        self.assertEqual(
+            active_desc.context["trade_page"].paginator.per_page,
+            10,
+        )
+
+        page_hrefs = re.findall(
+            r'<a\s+class="page-link"\s+href="([^"]+)"',
+            active_desc_review,
+        )
+        self.assertTrue(page_hrefs)
+        for href in page_hrefs:
+            self.assertTrue(href.endswith("#trade-review"))
+            self.assertEqual(href.count("#trade-review"), 1)
+            self.assertNotIn("%23trade-review", href)
+            decoded = href.replace("&amp;", "&")
+            self.assertIn("symbol=usd", decoded)
+            self.assertIn("trade_sort=volume", decoded)
+            self.assertIn("trade_dir=desc", decoded)
+        self.assertTrue(
+            any("trade_page=1" in href.replace("&amp;", "&") for href in page_hrefs)
+        )
+
+        first_page = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "usd",
+                "trade_sort": "volume",
+                "trade_dir": "desc",
+                "trade_page": "1",
+            },
+        )
+        next_hrefs = re.findall(
+            r'<a\s+class="page-link"\s+href="([^"]+)"',
+            self._trade_review_markup(first_page.content.decode()),
+        )
+        self.assertTrue(
+            any(
+                href.endswith("#trade-review")
+                and "trade_page=2" in href.replace("&amp;", "&")
+                for href in next_hrefs
+            )
+        )
+
+        first = self.client.get(self.dashboard_url)
+        paged = self.client.get(
+            self.dashboard_url,
+            {
+                "trade_sort": "volume",
+                "trade_dir": "desc",
+                "trade_page": "2",
+            },
+        )
+        self.assertEqual(first.context["kpis"], paged.context["kpis"])
+        self.assertEqual(
+            self._normalize_chart_html(first.context["chart_equity"]),
+            self._normalize_chart_html(paged.context["chart_equity"]),
+        )
+        self.assertEqual(
+            PIPS_MOVEMENT_TOLERANCE,
+            0.1,
+        )

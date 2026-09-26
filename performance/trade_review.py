@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 import pandas as pd
@@ -353,6 +354,60 @@ def format_display_value(value: Any) -> Any:
     return value
 
 
+def format_volume_value(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    try:
+        if not math.isfinite(float(value)):
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return ""
+    if not decimal_value.is_finite():
+        return ""
+    if decimal_value == 0:
+        return "0"
+    quantized = decimal_value.quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    if quantized == 0:
+        if decimal_value > 0:
+            return "<0.01"
+        return ">-0.01"
+    text = format(quantized, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _cell_alignment_class(column_key: str) -> str:
+    if column_key in {
+        "ticket",
+        "volume",
+        "profit",
+        "entry",
+        "exit",
+        "sl",
+        "tp",
+        "commission",
+        "swap",
+        "movement",
+    }:
+        return "trade-review-cell--numeric"
+    if column_key in {"open_time", "close_time"}:
+        return "trade-review-cell--date"
+    return ""
+
+
 def format_movement_value(value: Any) -> str:
     if _is_missing(value):
         return ""
@@ -389,7 +444,14 @@ def build_trade_review_rows(
                 cells.append(
                     {
                         "value": format_movement_value(value),
-                        "css_class": movement_css_class(value),
+                        "css_class": " ".join(
+                            part
+                            for part in (
+                                _cell_alignment_class("movement"),
+                                movement_css_class(value),
+                            )
+                            if part
+                        ),
                         "note": raw.get("_movement_label") or "",
                         "flag": (
                             "Pips disagreement"
@@ -400,15 +462,27 @@ def build_trade_review_rows(
                 )
                 continue
             source = column["source_column"]
+            raw_value = (
+                raw[source] if source in raw.index else ""
+            )
+            if column["key"] == "volume":
+                display_value = format_volume_value(raw_value)
+            else:
+                display_value = format_display_value(raw_value)
             cells.append(
                 {
-                    "value": format_display_value(
-                        raw[source] if source in raw.index else ""
-                    ),
-                    "css_class": (
-                        movement_css_class(raw[source])
-                        if column["key"] == "profit"
-                        else ""
+                    "value": display_value,
+                    "css_class": " ".join(
+                        part
+                        for part in (
+                            _cell_alignment_class(column["key"]),
+                            (
+                                movement_css_class(raw_value)
+                                if column["key"] == "profit"
+                                else ""
+                            ),
+                        )
+                        if part
                     ),
                     "note": "",
                     "flag": "",

@@ -1,5 +1,7 @@
 import pandas as pd
-from django.test import SimpleTestCase
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
 from .analytics import apply_analysis
 
@@ -410,4 +412,297 @@ class AnalysisExperienceTests(SimpleTestCase):
         pd.testing.assert_frame_equal(
             dataframe,
             original,
+        )
+
+class DashboardAnalysisIntegrationTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+
+        self.user = user_model.objects.create_user(
+            username="analysis-user",
+            email="analysis@example.com",
+            password="test-password-123",
+        )
+
+        self.client.force_login(self.user)
+
+        self.df = pd.DataFrame(
+            {
+                "Open Time": [
+                    "2026-09-01 10:00:00",
+                    "2026-09-02 11:00:00",
+                    "2026-09-03 12:00:00",
+                    "2026-09-04 13:00:00",
+                ],
+                "Symbol": [
+                    "XAUUSD",
+                    "EURUSD",
+                    "XAUEUR",
+                    "BTCUSD",
+                ],
+                "Type": [
+                    "buy",
+                    "sell",
+                    "buy",
+                    "sell",
+                ],
+                "Profit": [
+                    100,
+                    -50,
+                    25,
+                    10,
+                ],
+                "Notes": [
+                    "breakout",
+                    "reversal",
+                    "continuation",
+                    "range",
+                ],
+            }
+        )
+
+        session = self.client.session
+        session["cleaned_data"] = self.df.to_json(
+            orient="split",
+            date_format="iso",
+        )
+        session["last_uploaded_file"] = (
+            r"trading_files\user_4\history.csv"
+        )
+        session.save()
+
+        self.dashboard_url = reverse(
+            "performance:dashboard"
+        )
+
+    def test_dashboard_shared_analysis_controls_kpi_scope(self):
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            response.context["kpis"]["Total Trades"],
+            2,
+        )
+
+        self.assertEqual(
+            dict(context.active_filters),
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+    def test_dashboard_analysis_context_is_recomputed_per_request(self):
+        first_response = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "xau",
+            },
+        )
+
+        first_context = first_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            first_context.filtered_row_count,
+            2,
+        )
+
+        second_response = self.client.get(
+            self.dashboard_url
+        )
+
+        second_context = second_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            second_context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            second_context.filtered_row_count,
+            4,
+        )
+        self.assertEqual(
+            dict(second_context.active_filters),
+            {},
+        )
+
+        self.assertNotIn(
+            "analysis_context",
+            self.client.session,
+        )
+
+    def test_dashboard_exposes_basename_only_source_filename(self):
+        response = self.client.get(
+            self.dashboard_url
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_filename,
+            "history.csv",
+        )
+
+        self.assertContains(
+            response,
+            "history.csv",
+        )
+
+        self.assertNotContains(
+            response,
+            r"trading_files\user_4\history.csv",
+        )
+
+    def test_kpi_report_link_preserves_only_applied_analysis_filters(self):
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-03",
+                "symbol": "xau",
+                "q": "buy",
+                "file_q": "history",
+                "file_status": "processed",
+                "page": "3",
+                "trade_page": "2",
+            },
+        )
+
+        analysis_query = response.context[
+            "analysis_query"
+        ]
+
+        self.assertEqual(
+            analysis_query,
+            (
+                "start_date=2026-09-01"
+                "&end_date=2026-09-03"
+                "&symbol=xau"
+                "&q=buy"
+            ),
+        )
+
+        expected_href = (
+            reverse("performance:kpi_report")
+            + "?"
+            + analysis_query
+        )
+
+        expected_rendered_href = expected_href.replace("&", "&amp;")
+
+        self.assertContains(
+            response,
+            f'href="{expected_rendered_href}"',
+            html=False,
+        )
+
+        self.assertNotIn(
+            "file_q",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "file_status",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "page=",
+            analysis_query,
+        )
+        self.assertNotIn(
+            "trade_page",
+            analysis_query,
+        )
+
+    def test_dashboard_zero_result_preserves_analysis_lineage(self):
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "NO-SUCH-SYMBOL",
+            },
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            0,
+        )
+        self.assertTrue(
+            context.is_zero_result,
+        )
+
+        self.assertEqual(
+            response.context["kpis"],
+            {},
+        )
+
+        self.assertContains(
+            response,
+            "No trades match the current analysis scope",
+        )
+
+    def test_trade_pagination_query_preserves_analysis_filters(self):
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "start_date": "2026-09-01",
+                "symbol": "usd",
+                "q": "buy",
+                "trade_page": "2",
+            },
+        )
+
+        trade_query = response.context[
+            "trade_query"
+        ]
+
+        self.assertIn(
+            "start_date=2026-09-01",
+            trade_query,
+        )
+        self.assertIn(
+            "symbol=usd",
+            trade_query,
+        )
+        self.assertIn(
+            "q=buy",
+            trade_query,
+        )
+        self.assertNotIn(
+            "trade_page",
+            trade_query,
         )

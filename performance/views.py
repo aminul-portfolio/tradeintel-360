@@ -1093,15 +1093,71 @@ def export_excel(request):
         present = [c for c in preferred if c in dataframe.columns]
         return present if present else list(dataframe.columns)
 
+    analysis_context = None
+    analysis_query = ""
+    analysis_df = None
+    export_scope_df = None
+    min_rr_applied = False
+    applied_min_rr = None
+
+    min_rr = (request.GET.get("min_rr") or "").strip()
+    include_kpis = "include_kpis" in request.GET
+
+    if df is not None and not df.empty:
+        analysis_df, analysis_context = apply_analysis(
+            df,
+            request.GET,
+            source_filename=request.session.get(
+                "last_uploaded_file"
+            ),
+        )
+        analysis_query = urlencode(
+            dict(analysis_context.active_filters)
+        )
+        export_scope_df = analysis_df.copy()
+
+        rr_col = _first_present(
+            export_scope_df.columns,
+            ["RR", "rr", "R:R", "risk_reward", "Risk Reward"],
+        )
+        if min_rr and rr_col:
+            try:
+                min_rr_value = float(min_rr)
+                export_scope_df[rr_col] = pd.to_numeric(
+                    export_scope_df[rr_col],
+                    errors="coerce",
+                )
+                export_scope_df = export_scope_df[
+                    export_scope_df[rr_col] >= min_rr_value
+                ]
+                min_rr_applied = True
+                applied_min_rr = min_rr
+            except ValueError:
+                pass
+
     available_columns = get_available_columns(df)
-    selected_cols     = request.GET.getlist("cols") if request.GET.getlist("cols") else available_columns
+    selected_cols = (
+        request.GET.getlist("cols")
+        if request.GET.getlist("cols")
+        else available_columns
+    )
+    exported_row_count = (
+        len(export_scope_df)
+        if export_scope_df is not None
+        else 0
+    )
 
     if "download" not in request.GET:
         return render(request, "performance/excel_export.html", {
-            "columns":        available_columns,
-            "selected_cols":  selected_cols,
-            "data_ready":     bool(df is not None and not df.empty),
+            "columns": available_columns,
+            "selected_cols": selected_cols,
+            "data_ready": bool(df is not None and not df.empty),
             "available_rows": len(df) if df is not None else 0,
+            "analysis_context": analysis_context,
+            "analysis_query": analysis_query,
+            "exported_row_count": exported_row_count,
+            "min_rr_applied": min_rr_applied,
+            "applied_min_rr": applied_min_rr,
         })
 
     if df is None or df.empty:
@@ -1110,77 +1166,58 @@ def export_excel(request):
             status=400,
         )
 
-    working_df = df.copy()
-
-    date_candidates = ["Open Time", "Open", "Date", "entry_time", "exit_time", "created_at", "updated_at"]
-    date_col = _first_present(working_df.columns, date_candidates)
-    if date_col:
-        working_df[date_col] = pd.to_datetime(working_df[date_col], errors="coerce")
-
-    start_date   = (request.GET.get("start_date") or "").strip()
-    end_date     = (request.GET.get("end_date")   or "").strip()
-    symbol       = (request.GET.get("symbol")     or "").strip()
-    min_rr       = (request.GET.get("min_rr")     or "").strip()
-    include_kpis = "include_kpis" in request.GET
-
-    if date_col:
-        if start_date:
-            working_df = working_df[working_df[date_col] >= pd.to_datetime(start_date, errors="coerce")]
-        if end_date:
-            working_df = working_df[working_df[date_col] <= pd.to_datetime(end_date, errors="coerce")]
-
-    symbol_col = _first_present(working_df.columns, ["Symbol", "symbol"])
-    if symbol and symbol_col:
-        working_df = working_df[
-            working_df[symbol_col].astype(str).str.contains(symbol, case=False, na=False)
+    selected_cols = [
+        c for c in request.GET.getlist("cols")
+        if c in export_scope_df.columns
+    ]
+    if not selected_cols:
+        selected_cols = [
+            c for c in available_columns
+            if c in export_scope_df.columns
         ]
-
-    rr_col = _first_present(working_df.columns, ["RR", "rr", "R:R", "risk_reward", "Risk Reward"])
-    if min_rr and rr_col:
-        try:
-            min_rr_value = float(min_rr)
-            working_df[rr_col] = pd.to_numeric(working_df[rr_col], errors="coerce")
-            working_df = working_df[working_df[rr_col] >= min_rr_value]
-        except ValueError:
-            pass
-
-    selected_cols = [c for c in request.GET.getlist("cols") if c in working_df.columns]
     if not selected_cols:
-        selected_cols = [c for c in available_columns if c in working_df.columns]
-    if not selected_cols:
-        selected_cols = list(working_df.columns)
+        selected_cols = list(export_scope_df.columns)
 
-    export_df = working_df[selected_cols].copy()
+    export_df = export_scope_df[selected_cols].copy()
     for col in export_df.columns:
         if pd.api.types.is_datetime64_any_dtype(export_df[col]):
             export_df[col] = export_df[col].dt.strftime("%Y-%m-%d %H:%M")
     export_df = export_df.fillna("")
+
+    source_file = (
+        analysis_context.source_filename
+        if analysis_context.source_filename
+        else "Session dataset"
+    )
+    analysis_filters = analysis_query if analysis_query else "None"
+    min_rr_meta = applied_min_rr if min_rr_applied else "Not applied"
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         export_df.to_excel(writer, index=False, sheet_name="Trades")
 
         pd.DataFrame([
-            {"Field": "Generated At",      "Value": timezone.now().strftime("%Y-%m-%d %H:%M:%S")},
-            {"Field": "Source Rows",        "Value": len(df)},
-            {"Field": "Exported Rows",      "Value": len(export_df)},
-            {"Field": "Date Filter Column", "Value": date_col or "Not available"},
-            {"Field": "Symbol Filter",      "Value": symbol or "Not set"},
-            {"Field": "Min RR Filter",      "Value": min_rr or "Not set"},
+            {"Field": "Generated At", "Value": timezone.now().strftime("%Y-%m-%d %H:%M:%S")},
+            {"Field": "Source File", "Value": source_file},
+            {"Field": "Source Rows", "Value": analysis_context.source_row_count},
+            {"Field": "Analysed Rows", "Value": analysis_context.filtered_row_count},
+            {"Field": "Exported Rows", "Value": len(export_scope_df)},
+            {"Field": "Analysis Filters", "Value": analysis_filters},
+            {"Field": "Export-only Min RR", "Value": min_rr_meta},
         ]).to_excel(writer, index=False, sheet_name="ExportMeta")
 
         if include_kpis:
-            kpis     = _safe_compute_kpis(working_df)
+            kpis = _safe_compute_kpis(analysis_df)
             kpi_rows = (
                 [{"Metric": k, "Value": v} for k, v in kpis.items()]
                 if kpis
-                else [{"Metric": "Info", "Value": "No KPI values available for the current filtered dataset."}]
+                else [{"Metric": "Info", "Value": "No KPI values available for the current analysis scope."}]
             )
             pd.DataFrame(kpi_rows).to_excel(writer, index=False, sheet_name="KPIs")
 
     output.seek(0)
     timestamp = timezone.now().strftime("%Y%m%d_%H%M")
-    response  = HttpResponse(
+    response = HttpResponse(
         output.getvalue(),
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

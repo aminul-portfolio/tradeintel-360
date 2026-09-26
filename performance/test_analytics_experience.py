@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import pandas as pd
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
@@ -474,6 +476,95 @@ class DashboardAnalysisIntegrationTests(TestCase):
         self.dashboard_url = reverse(
             "performance:dashboard"
         )
+        self.export_url = reverse(
+            "performance:export_excel"
+        )
+
+    def _load_export_session(self):
+        export_df = pd.DataFrame(
+            {
+                "Open Time": [
+                    "2026-09-01 10:00:00",
+                    "2026-09-02 11:00:00",
+                    "2026-09-03 12:00:00",
+                    "2026-09-04 13:00:00",
+                ],
+                "Symbol": [
+                    "XAUUSD",
+                    "EURUSD",
+                    "XAUEUR",
+                    "BTCUSD",
+                ],
+                "Type": [
+                    "buy",
+                    "sell",
+                    "buy",
+                    "sell",
+                ],
+                "Profit": [
+                    100,
+                    -50,
+                    25,
+                    10,
+                ],
+                "RR": [
+                    2.0,
+                    1.0,
+                    1.5,
+                    3.0,
+                ],
+                "Notes": [
+                    "breakout",
+                    "reversal",
+                    "continuation",
+                    "range",
+                ],
+            }
+        )
+        session = self.client.session
+        session["cleaned_data"] = export_df.to_json(
+            orient="split",
+            date_format="iso",
+        )
+        session["last_uploaded_file"] = (
+            r"trading_files\user_4\history.csv"
+        )
+        session.save()
+        return export_df
+
+    def _read_export_workbook(self, response):
+        workbook = pd.ExcelFile(BytesIO(response.content))
+        return {
+            name: pd.read_excel(workbook, sheet_name=name)
+            for name in workbook.sheet_names
+        }
+
+    def _export_meta_map(self, sheets):
+        meta = sheets["ExportMeta"]
+        return {
+            str(field): value
+            for field, value in zip(
+                meta["Field"],
+                meta["Value"],
+            )
+        }
+
+    def _normalise_kpi_value(self, value):
+        if value is None or (
+            isinstance(value, float)
+            and pd.isna(value)
+        ):
+            return ""
+        text = str(value).strip()
+        try:
+            number = float(text.replace(",", ""))
+            return (
+                f"{number:.6f}"
+                .rstrip("0")
+                .rstrip(".")
+            )
+        except ValueError:
+            return text
 
     def test_dashboard_shared_analysis_controls_kpi_scope(self):
         response = self.client.get(
@@ -1014,4 +1105,455 @@ class DashboardAnalysisIntegrationTests(TestCase):
         self.assertNotContains(
             response,
             r"trading_files\user_4\history.csv",
+        )
+
+    def test_export_preview_uses_shared_analysis_scope(self):
+        self._load_export_session()
+
+        response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            dict(context.active_filters),
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+        self.assertEqual(
+            response.context["exported_row_count"],
+            2,
+        )
+        self.assertContains(
+            response,
+            'name="q"',
+        )
+        self.assertContains(
+            response,
+            'value="buy"',
+        )
+        self.assertNotIn(
+            "min_rr",
+            context.active_filters,
+        )
+
+    def test_export_min_rr_is_export_only_refinement(self):
+        self._load_export_session()
+
+        response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "1.75",
+            },
+        )
+
+        context = response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            response.context["exported_row_count"],
+            1,
+        )
+        self.assertNotIn(
+            "min_rr",
+            context.active_filters,
+        )
+        self.assertTrue(
+            response.context["min_rr_applied"]
+        )
+        self.assertEqual(
+            response.context["applied_min_rr"],
+            "1.75",
+        )
+        self.assertContains(
+            response,
+            "Shared Analysis Filters",
+        )
+        self.assertContains(
+            response,
+            "Export-only Min R/R",
+        )
+        self.assertContains(
+            response,
+            "1.75",
+        )
+        self.assertContains(
+            response,
+            "Analysed rows: 2",
+        )
+        self.assertContains(
+            response,
+            "Exported rows: 1",
+        )
+
+    def test_export_workbook_metadata_reconciles_row_lineage(self):
+        self._load_export_session()
+
+        response = self.client.get(
+            self.export_url,
+            {
+                "download": "1",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "1.75",
+            },
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        sheets = self._read_export_workbook(response)
+        meta_map = self._export_meta_map(sheets)
+
+        self.assertEqual(
+            str(meta_map["Source File"]),
+            "history.csv",
+        )
+        self.assertEqual(
+            int(meta_map["Source Rows"]),
+            4,
+        )
+        self.assertEqual(
+            int(meta_map["Analysed Rows"]),
+            2,
+        )
+        self.assertEqual(
+            int(meta_map["Exported Rows"]),
+            1,
+        )
+        self.assertEqual(
+            str(meta_map["Analysis Filters"]),
+            "symbol=xau&q=buy",
+        )
+        self.assertEqual(
+            str(meta_map["Export-only Min RR"]),
+            "1.75",
+        )
+        self.assertEqual(
+            len(sheets["Trades"]),
+            1,
+        )
+        self.assertNotIn(
+            r"trading_files\user_4\history.csv",
+            " ".join(str(v) for v in meta_map.values()),
+        )
+        self.assertNotIn(
+            r"trading_files\user_4\history.csv",
+            response.content.decode(
+                "latin-1",
+                errors="ignore",
+            ),
+        )
+
+    def test_export_kpi_sheet_matches_kpi_report_analysis_scope(self):
+        self._load_export_session()
+
+        export_response = self.client.get(
+            self.export_url,
+            {
+                "download": "1",
+                "include_kpis": "1",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "1.75",
+            },
+        )
+        report_response = self.client.get(
+            reverse("performance:kpi_report"),
+            {
+                "symbol": "xau",
+                "q": "buy",
+            },
+        )
+
+        sheets = self._read_export_workbook(
+            export_response
+        )
+        kpi_sheet = sheets["KPIs"]
+        excel_kpis = {
+            str(metric): value
+            for metric, value in zip(
+                kpi_sheet["Metric"],
+                kpi_sheet["Value"],
+            )
+        }
+        report_kpis = report_response.context["kpis"]
+
+        self.assertEqual(
+            len(sheets["Trades"]),
+            1,
+        )
+        self.assertEqual(
+            set(excel_kpis),
+            set(report_kpis),
+        )
+        for key, expected in report_kpis.items():
+            self.assertEqual(
+                self._normalise_kpi_value(
+                    excel_kpis[key]
+                ),
+                self._normalise_kpi_value(expected),
+                key,
+            )
+        self.assertEqual(
+            self._normalise_kpi_value(
+                excel_kpis["Total Trades"]
+            ),
+            "2",
+        )
+
+    def test_export_invalid_or_unavailable_min_rr_is_safe(self):
+        self._load_export_session()
+
+        invalid_response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "not-a-number",
+            },
+        )
+
+        self.assertEqual(
+            invalid_response.status_code,
+            200,
+        )
+
+        invalid_context = invalid_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            invalid_context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            invalid_response.context[
+                "exported_row_count"
+            ],
+            invalid_context.filtered_row_count,
+        )
+        self.assertFalse(
+            invalid_response.context["min_rr_applied"]
+        )
+        self.assertContains(
+            invalid_response,
+            "Not applied",
+        )
+        self.assertNotIn(
+            "min_rr",
+            invalid_context.active_filters,
+        )
+
+        session = self.client.session
+        session["cleaned_data"] = self.df.to_json(
+            orient="split",
+            date_format="iso",
+        )
+        session.save()
+
+        missing_rr_response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "1.75",
+            },
+        )
+
+        missing_rr_context = missing_rr_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            missing_rr_response.status_code,
+            200,
+        )
+        self.assertEqual(
+            missing_rr_context.filtered_row_count,
+            2,
+        )
+        self.assertEqual(
+            missing_rr_response.context[
+                "exported_row_count"
+            ],
+            missing_rr_context.filtered_row_count,
+        )
+        self.assertFalse(
+            missing_rr_response.context["min_rr_applied"]
+        )
+        self.assertContains(
+            missing_rr_response,
+            "Not applied",
+        )
+        self.assertNotIn(
+            "min_rr",
+            missing_rr_context.active_filters,
+        )
+
+    def test_export_context_recomputed_with_private_analysis_navigation(self):
+        self._load_export_session()
+
+        first_response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+                "symbol": "xau",
+            },
+        )
+
+        first_context = first_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            first_context.filtered_row_count,
+            2,
+        )
+
+        second_response = self.client.get(
+            self.export_url,
+            {
+                "preview": "1",
+            },
+        )
+
+        second_context = second_response.context[
+            "analysis_context"
+        ]
+
+        self.assertEqual(
+            second_context.source_row_count,
+            4,
+        )
+        self.assertEqual(
+            second_context.filtered_row_count,
+            4,
+        )
+        self.assertEqual(
+            dict(second_context.active_filters),
+            {},
+        )
+        self.assertNotIn(
+            "analysis_context",
+            self.client.session,
+        )
+        self.assertEqual(
+            second_context.source_filename,
+            "history.csv",
+        )
+        self.assertContains(
+            second_response,
+            "history.csv",
+        )
+        self.assertNotContains(
+            second_response,
+            r"trading_files\user_4\history.csv",
+        )
+
+        filtered_response = self.client.get(
+            self.export_url,
+            {
+                "start_date": "2026-09-01",
+                "symbol": "xau",
+                "q": "buy",
+                "min_rr": "1.75",
+                "include_kpis": "1",
+                "preview": "1",
+            },
+        )
+
+        analysis_query = filtered_response.context[
+            "analysis_query"
+        ]
+
+        self.assertEqual(
+            analysis_query,
+            (
+                "start_date=2026-09-01"
+                "&symbol=xau"
+                "&q=buy"
+            ),
+        )
+
+        dashboard_href = (
+            reverse("performance:dashboard")
+            + "?"
+            + analysis_query
+        )
+        report_href = (
+            reverse("performance:kpi_report")
+            + "?"
+            + analysis_query
+        )
+
+        self.assertContains(
+            filtered_response,
+            f'href="{dashboard_href.replace("&", "&amp;")}"',
+            html=False,
+        )
+        self.assertContains(
+            filtered_response,
+            f'href="{report_href.replace("&", "&amp;")}"',
+            html=False,
+        )
+
+        for leaked in (
+            "min_rr",
+            "include_kpis",
+            "preview",
+            "download",
+            "cols",
+            "kpi_q",
+            "trade_page",
+            "kpi_page",
+            "file_q",
+            "file_status",
+        ):
+            self.assertNotIn(
+                leaked,
+                analysis_query,
+            )
+        self.assertNotIn(
+            "page=",
+            analysis_query,
         )

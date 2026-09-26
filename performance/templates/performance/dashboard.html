@@ -6,6 +6,30 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'core/css/dashboard_additions.css' %}">
+<style>
+.trade-review-table a.trade-review-sort {
+  color: inherit;
+  text-decoration: none;
+}
+.trade-review-table .trade-review-move--pos {
+  color: #22c55e;
+  font-weight: 600;
+}
+.trade-review-table .trade-review-move--neg {
+  color: #f43f5e;
+  font-weight: 600;
+}
+.trade-review-table .trade-review-move__meta {
+  display: block;
+  font-size: 0.75rem;
+  color: #8896b3;
+}
+.trade-review-table .trade-review-flag {
+  display: block;
+  font-size: 0.75rem;
+  color: #f59e0b;
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -578,11 +602,50 @@
     </div>
 
 
-    {% if df_html %}
+    {% if trade_page and trade_page.object_list %}
 
     <div class="table-shell">
       <div class="table-responsive">
-        {{ df_html|safe }}
+        <table class="table table-striped align-middle trade-review-table">
+          <thead>
+            <tr>
+              {% for column in trade_review_columns %}
+              <th>
+                {% if column.sort_key and column.sort_query %}
+                <a
+                  class="trade-review-sort"
+                  href="?{{ column.sort_query }}"
+                >
+                  {{ column.label }}
+                  {% if column.is_active %}
+                    {% if trade_dir == "desc" %}v{% else %}^{% endif %}
+                  {% endif %}
+                </a>
+                {% else %}
+                  {{ column.label }}
+                {% endif %}
+              </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in trade_page.object_list %}
+            <tr>
+              {% for cell in row.cells %}
+              <td class="{{ cell.css_class }}">
+                {{ cell.value }}
+                {% if cell.note %}
+                <span class="trade-review-move__meta">{{ cell.note }}</span>
+                {% endif %}
+                {% if cell.flag %}
+                <span class="trade-review-flag">{{ cell.flag }}</span>
+                {% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
 

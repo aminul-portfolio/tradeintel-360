@@ -19,6 +19,16 @@ from .analytics import apply_analysis
 from .forms import FilterForm, TradingFileForm
 from .ingestion import IngestionError, clean_ftmo_csv
 from .models import TradingFile
+from .trade_review import (
+    TRADE_PAGE_SIZE,
+    build_trade_review_columns,
+    build_trade_review_rows,
+    enrich_trade_review,
+    next_sort_direction,
+    normalize_sort_direction,
+    normalize_sort_key,
+    sort_trade_review,
+)
 from .utils import compute_kpis
 
 CLEANED_DATA_SESSION_KEY = "cleaned_data"
@@ -114,6 +124,14 @@ def _query_without(request, *keys):
     for key in keys:
         q.pop(key, None)
     return q.urlencode()
+
+
+def _trade_sort_query(request, sort_key, sort_dir):
+    query = request.GET.copy()
+    query.pop("trade_page", None)
+    query["trade_sort"] = sort_key
+    query["trade_dir"] = sort_dir
+    return query.urlencode()
 
 
 def _first_present(columns, candidates):
@@ -262,6 +280,10 @@ def dashboard(request):
     chart_pie_sections = {}
     analysis_context = None
     analysis_query = ""
+    review_df = None
+    trade_sort = ""
+    trade_dir = "asc"
+    trade_review_columns = []
 
     filter_form = FilterForm(request.GET or None)
     trade_q = request.GET.get("q", "").strip()
@@ -280,24 +302,7 @@ def dashboard(request):
         analysis_query = urlencode(
             dict(analysis_context.active_filters)
         )
-
-        # ── Trade table ───────────────────────────────────────────────
-        trade_paginator = Paginator(
-            working_df.to_dict("records"),
-            10,
-        )
-        trade_page = trade_paginator.get_page(
-            request.GET.get("trade_page")
-        )
-        df_page = pd.DataFrame(
-            trade_page.object_list
-        )
-
-        if not df_page.empty:
-            df_html = df_page.to_html(
-                classes="table table-striped align-middle",
-                index=False,
-            )
+        review_df = working_df.copy()
 
         kpis = _safe_compute_kpis(
             working_df
@@ -722,6 +727,49 @@ def dashboard(request):
                     ),
                 )
 
+    if review_df is not None:
+        review_df = enrich_trade_review(review_df)
+        trade_sort = normalize_sort_key(
+            request.GET.get("trade_sort")
+        ) or ""
+        trade_dir = normalize_sort_direction(
+            request.GET.get("trade_dir")
+        )
+        if trade_sort:
+            review_df = sort_trade_review(
+                review_df,
+                trade_sort,
+                trade_dir,
+            )
+        trade_review_columns = build_trade_review_columns(
+            review_df
+        )
+        for column in trade_review_columns:
+            sort_key = column.get("sort_key")
+            if not sort_key:
+                column["sort_query"] = ""
+                column["is_active"] = False
+                continue
+            column["sort_query"] = _trade_sort_query(
+                request,
+                sort_key,
+                next_sort_direction(
+                    trade_sort,
+                    trade_dir,
+                    sort_key,
+                ),
+            )
+            column["is_active"] = sort_key == trade_sort
+        trade_page = Paginator(
+            build_trade_review_rows(
+                review_df,
+                trade_review_columns,
+            ),
+            TRADE_PAGE_SIZE,
+        ).get_page(
+            request.GET.get("trade_page")
+        )
+
     trade_query = _query_without(
         request,
         "trade_page",
@@ -785,6 +833,11 @@ def dashboard(request):
             ),
             "analysis_query": (
                 analysis_query
+            ),
+            "trade_sort": trade_sort,
+            "trade_dir": trade_dir,
+            "trade_review_columns": (
+                trade_review_columns
             ),
         },
     )

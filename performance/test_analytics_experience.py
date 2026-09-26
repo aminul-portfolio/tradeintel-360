@@ -1,3 +1,4 @@
+import re
 from io import BytesIO
 
 import pandas as pd
@@ -1557,3 +1558,252 @@ class DashboardAnalysisIntegrationTests(TestCase):
             "page=",
             analysis_query,
         )
+
+    def _load_trade_review_session(self, rows=12):
+        data = {
+            "Ticket": list(range(1, rows + 1)),
+            "Open Time": [
+                f"2026-09-{(index % 28) + 1:02d} 10:00:00"
+                for index in range(rows)
+            ],
+            "Symbol": [
+                "XAUUSD" if index % 2 == 0 else "EURUSD"
+                for index in range(rows)
+            ],
+            "Type": [
+                "buy" if index % 2 == 0 else "sell"
+                for index in range(rows)
+            ],
+            "Price": [100 + index for index in range(rows)],
+            "Price.1": [
+                110 + index if index % 2 == 0 else 90 + index
+                for index in range(rows)
+            ],
+            "Profit": [10 * (rows - index) for index in range(rows)],
+            "Pips": [
+                10.0 if index < 2 else None
+                for index in range(rows)
+            ],
+            "Notes": ["ok"] * rows,
+        }
+        if rows:
+            data["Symbol"][0] = "<script>alert(1)</script>"
+        frame = pd.DataFrame(data)
+        session = self.client.session
+        session["cleaned_data"] = frame.to_json(
+            orient="split",
+            date_format="iso",
+        )
+        session["last_uploaded_file"] = (
+            r"trading_files\user_4\history.csv"
+        )
+        session.save()
+        return frame
+
+    def _normalize_chart_html(self, html):
+        if not html:
+            return html
+        return re.sub(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            "PLOT-ID",
+            html,
+        )
+
+    def _trade_column_index(self, response, key):
+        for index, column in enumerate(
+            response.context["trade_review_columns"]
+        ):
+            if column["key"] == key:
+                return index
+        self.fail(f"Missing Trade Review column {key}")
+
+    def test_trade_review_sorts_before_pagination(self):
+        self._load_trade_review_session(12)
+
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "trade_sort": "profit",
+                "trade_dir": "desc",
+                "trade_page": "1",
+            },
+        )
+
+        page_rows = response.context["trade_page"].object_list
+        self.assertEqual(len(page_rows), 10)
+        profit_index = self._trade_column_index(
+            response,
+            "profit",
+        )
+        first_profits = [
+            row["cells"][profit_index]["value"]
+            for row in page_rows
+        ]
+        self.assertEqual(first_profits[0], 120)
+        self.assertEqual(first_profits[-1], 30)
+
+    def test_changing_sort_resets_trade_page(self):
+        self._load_trade_review_session(12)
+
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "trade_sort": "profit",
+                "trade_dir": "asc",
+                "trade_page": "2",
+                "symbol": "usd",
+            },
+        )
+
+        profit_column = None
+        for column in response.context["trade_review_columns"]:
+            if column["key"] == "profit":
+                profit_column = column
+                break
+
+        self.assertIsNotNone(profit_column)
+        self.assertNotIn(
+            "trade_page",
+            profit_column["sort_query"],
+        )
+        self.assertIn(
+            "trade_sort=profit",
+            profit_column["sort_query"],
+        )
+        self.assertIn(
+            "symbol=usd",
+            profit_column["sort_query"],
+        )
+
+    def test_pagination_preserves_trade_sort_dir_and_filters(self):
+        self._load_trade_review_session(12)
+
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-30",
+                "symbol": "usd",
+                "q": "buy",
+                "trade_sort": "profit",
+                "trade_dir": "desc",
+                "trade_page": "2",
+            },
+        )
+
+        trade_query = response.context["trade_query"]
+        self.assertIn("start_date=2026-09-01", trade_query)
+        self.assertIn("end_date=2026-09-30", trade_query)
+        self.assertIn("symbol=usd", trade_query)
+        self.assertIn("q=buy", trade_query)
+        self.assertIn("trade_sort=profit", trade_query)
+        self.assertIn("trade_dir=desc", trade_query)
+        self.assertNotIn("trade_page", trade_query)
+
+    def test_kpis_and_charts_unchanged_across_trade_sort(self):
+        first = self.client.get(self.dashboard_url)
+        second = self.client.get(
+            self.dashboard_url,
+            {
+                "trade_sort": "profit",
+                "trade_dir": "desc",
+            },
+        )
+
+        self.assertEqual(
+            first.context["kpis"],
+            second.context["kpis"],
+        )
+        self.assertEqual(
+            self._normalize_chart_html(
+                first.context["chart_equity"]
+            ),
+            self._normalize_chart_html(
+                second.context["chart_equity"]
+            ),
+        )
+        self.assertEqual(
+            self._normalize_chart_html(
+                first.context["chart_profit"]
+            ),
+            self._normalize_chart_html(
+                second.context["chart_profit"]
+            ),
+        )
+        self.assertEqual(
+            first.context["analysis_context"].filtered_row_count,
+            second.context["analysis_context"].filtered_row_count,
+        )
+        self.assertNotIn(
+            "trade_sort",
+            first.context["analysis_context"].active_filters,
+        )
+        self.assertNotIn(
+            "trade_dir",
+            second.context["analysis_context"].active_filters,
+        )
+
+    def test_trade_review_cells_are_escaped(self):
+        self._load_trade_review_session(4)
+
+        response = self.client.get(self.dashboard_url)
+        content = response.content.decode()
+
+        self.assertNotIn("<script>alert(1)</script>", content)
+        self.assertIn(
+            "&lt;script&gt;alert(1)&lt;/script&gt;",
+            content,
+        )
+
+    def test_trade_review_page_size_is_ten(self):
+        self._load_trade_review_session(12)
+
+        response = self.client.get(self.dashboard_url)
+
+        self.assertEqual(
+            response.context["trade_page"].paginator.per_page,
+            10,
+        )
+        self.assertEqual(
+            len(response.context["trade_page"].object_list),
+            10,
+        )
+        self.assertEqual(
+            response.context["trade_page"].paginator.num_pages,
+            2,
+        )
+
+    def test_trade_review_zero_result_remains_safe(self):
+        response = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "NO-SUCH-SYMBOL",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(response.context["trade_page"].object_list),
+            [],
+        )
+        self.assertContains(
+            response,
+            "No trades match the current analysis scope",
+        )
+
+    def test_trade_review_renders_broker_pips_and_price_move(self):
+        self._load_trade_review_session(4)
+
+        response = self.client.get(self.dashboard_url)
+        movement_index = self._trade_column_index(
+            response,
+            "movement",
+        )
+        notes = [
+            row["cells"][movement_index]["note"]
+            for row in response.context["trade_page"].object_list
+        ]
+
+        self.assertIn("Pips", notes)
+        self.assertIn("Price Move", notes)
+        self.assertContains(response, "Realised movement")

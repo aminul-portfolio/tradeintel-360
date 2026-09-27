@@ -9,6 +9,11 @@ urlpatterns = [
     # main pages
     path("", views.dashboard, name="dashboard"),
     path("upload/", views.upload_file, name="upload_file"),
+    path(
+        "market-data/upload/",
+        views.upload_market_data,
+        name="upload_market_data",
+    ),
     path("kpi/", views.kpi_report, name="kpi_report"),
     path("project-plan/", views.project_one_plan, name="project_one_plan"),
 

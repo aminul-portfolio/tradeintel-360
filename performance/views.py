@@ -13,14 +13,33 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import get_template
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from xhtml2pdf import pisa
 
 from .analytics import apply_analysis
-from .forms import FilterForm, TradingFileForm
+from .excursion import (
+    DURATION_TOLERANCE_SECONDS,
+    PRICE_COMPARISON_EPSILON,
+    RUN_STATUS_OK,
+    STATUS_COMPUTED,
+    STATUS_INCOMPLETE_COVERAGE,
+    STATUS_INVARIANT_VIOLATION,
+    compute_excursion_evidence,
+    compute_journal_fingerprint,
+)
+from .excursion_state import (
+    ExcursionStateError,
+    clear_excursion_state,
+    load_bound_excursion_state,
+    store_excursion_state,
+)
+from .forms import FilterForm, MarketDataUploadForm, TradingFileForm
 from .ingestion import IngestionError, clean_ftmo_csv
+from .market_data import MarketDataValidationError, parse_market_data_bytes
 from .models import TradingFile
 from .trade_review import (
     TRADE_PAGE_SIZE,
+    attach_excursion_evidence,
     build_trade_review_columns,
     build_trade_review_rows,
     enrich_trade_review,
@@ -167,6 +186,39 @@ def _safe_compute_kpis(df):
         return {}
 
 
+def _bind_dashboard_excursion_state(request, full_df):
+    if full_df is None or full_df.empty:
+        clear_excursion_state(request.session)
+        return None
+    fingerprint = compute_journal_fingerprint(full_df)
+    if not fingerprint:
+        clear_excursion_state(request.session)
+        return None
+    return load_bound_excursion_state(
+        request.session,
+        current_journal_fingerprint=fingerprint,
+    )
+
+
+def _excursion_summary(state):
+    if not state:
+        return None
+    counts = state.get("status_counts") or {}
+    matched = (
+        int(counts.get(STATUS_COMPUTED, 0))
+        + int(counts.get(STATUS_INCOMPLETE_COVERAGE, 0))
+        + int(counts.get(STATUS_INVARIANT_VIOLATION, 0))
+    )
+    return {
+        "matched_trade_count": matched,
+        "status_counts": counts,
+        "reason_counts": state.get("reason_counts") or {},
+        "journal_fingerprint": state.get("journal_fingerprint"),
+        "time_basis": state.get("time_basis") or {},
+        "market_provenance": state.get("market_provenance") or {},
+    }
+
+
 def _is_trade_like_df(df):
     if df is None or df.empty:
         return False
@@ -284,6 +336,8 @@ def dashboard(request):
     trade_sort = ""
     trade_dir = "asc"
     trade_review_columns = []
+    excursion_state = _bind_dashboard_excursion_state(request, df)
+    excursion_summary = _excursion_summary(excursion_state)
 
     filter_form = FilterForm(request.GET or None)
     trade_q = request.GET.get("q", "").strip()
@@ -303,6 +357,11 @@ def dashboard(request):
             dict(analysis_context.active_filters)
         )
         review_df = working_df.copy()
+        if excursion_state:
+            review_df = attach_excursion_evidence(
+                review_df,
+                excursion_state.get("evidence"),
+            )
 
         kpis = _safe_compute_kpis(
             working_df
@@ -839,8 +898,87 @@ def dashboard(request):
             "trade_review_columns": (
                 trade_review_columns
             ),
+            "market_data_form": MarketDataUploadForm(),
+            "excursion_state": excursion_state,
+            "excursion_summary": excursion_summary,
+            "price_comparison_epsilon": PRICE_COMPARISON_EPSILON,
+            "duration_tolerance_seconds": DURATION_TOLERANCE_SECONDS,
         },
     )
+
+
+@login_required
+@require_POST
+def upload_market_data(request):
+    clear_excursion_state(request.session)
+    form = MarketDataUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        messages.error(
+            request,
+            "Broker-bar upload was not accepted.",
+        )
+        return redirect("performance:dashboard")
+
+    journal = _read_session_df(
+        request.session.get(CLEANED_DATA_SESSION_KEY)
+    )
+    if journal is None or journal.empty:
+        messages.error(
+            request,
+            "Load a cleaned journal before uploading market bars.",
+        )
+        return redirect("performance:dashboard")
+
+    uploaded = form.cleaned_data["market_file"]
+    raw_bytes = uploaded.read()
+    try:
+        parsed = parse_market_data_bytes(
+            raw_bytes,
+            uploaded.name,
+            declared_source=form.cleaned_data["declared_source"],
+            declared_export_method=form.cleaned_data["declared_export_method"],
+        )
+    except MarketDataValidationError as exc:
+        messages.error(
+            request,
+            f"Market data was rejected ({exc.reason}).",
+        )
+        return redirect("performance:dashboard")
+
+    result = compute_excursion_evidence(
+        journal,
+        parsed.dataframe,
+        form.cleaned_data["time_basis"],
+    )
+    if result.run_status != RUN_STATUS_OK or not result.journal_fingerprint:
+        messages.error(
+            request,
+            (
+                "Excursion evidence could not be stored "
+                f"({result.reason_code or result.run_status})."
+            ),
+        )
+        return redirect("performance:dashboard")
+
+    try:
+        store_excursion_state(
+            request.session,
+            result,
+            time_basis=form.cleaned_data["time_basis"],
+            market_provenance=parsed.provenance,
+        )
+    except ExcursionStateError as exc:
+        messages.error(
+            request,
+            f"Evidence could not be stored ({exc.reason}).",
+        )
+        return redirect("performance:dashboard")
+
+    messages.success(
+        request,
+        "Broker-bar evidence was stored for the current journal.",
+    )
+    return redirect("performance:dashboard")
 
 
 # ─────────────────────────────────────────────────────────────────────

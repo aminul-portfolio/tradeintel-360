@@ -49,6 +49,22 @@
   font-size: 0.75rem;
   color: #f59e0b;
 }
+#broker-bar-evidence .broker-bar-help {
+  color: var(--text-2);
+  font-size: 0.875rem;
+}
+#broker-bar-evidence .broker-bar-warning {
+  color: var(--text-1);
+  font-weight: 600;
+}
+#broker-bar-evidence .broker-bar-meta {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+#broker-bar-evidence .filter-grid {
+  margin-bottom: 1rem;
+}
 </style>
 {% endblock %}
 
@@ -591,6 +607,116 @@
 
 </section>
 {% endif %}
+
+
+{# ------------------------------------------------------------------ #}
+{# BROKER-BAR EVIDENCE                                                 #}
+{# ------------------------------------------------------------------ #}
+<section class="dash-section" id="broker-bar-evidence">
+  <div class="surface-card section-card">
+    <div class="dash-card-header mb-3">
+      <div>
+        <h2 class="section-heading mb-1">Broker-bar evidence</h2>
+        <p class="section-subcopy mb-0">
+          Uploaded cTrader M1 bars. Declared source is user-declared metadata
+          only. This is an M1 bar approximation, not a verified broker origin.
+        </p>
+      </div>
+    </div>
+
+    <p class="broker-bar-warning mb-3">
+      MFE/MAE use each trade's instrument price points. Values across different symbols are not directly comparable.
+    </p>
+    <p class="broker-bar-help mb-4">
+      Evidence is computed against the full cleaned journal. Dashboard filters
+      only change which Ticket rows are shown.
+    </p>
+
+    <form
+      method="post"
+      enctype="multipart/form-data"
+      action="{% url 'performance:upload_market_data' %}"
+      class="app-filter-bar"
+    >
+      {% csrf_token %}
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.market_file.label }}</label>
+          {{ market_data_form.market_file }}
+          <p class="section-subcopy mb-0">{{ market_data_form.market_file.help_text }}</p>
+        </div>
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.declared_source.label }}</label>
+          {{ market_data_form.declared_source }}
+          <p class="section-subcopy mb-0">{{ market_data_form.declared_source.help_text }}</p>
+        </div>
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.declared_export_method.label }}</label>
+          {{ market_data_form.declared_export_method }}
+          <p class="section-subcopy mb-0">{{ market_data_form.declared_export_method.help_text }}</p>
+        </div>
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.time_basis_kind.label }}</label>
+          {{ market_data_form.time_basis_kind }}
+          <p class="section-subcopy mb-0">{{ market_data_form.time_basis_kind.help_text }}</p>
+        </div>
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.offset_minutes.label }}</label>
+          {{ market_data_form.offset_minutes }}
+          <p class="section-subcopy mb-0">{{ market_data_form.offset_minutes.help_text }}</p>
+        </div>
+        <div class="filter-field">
+          <label class="form-label">{{ market_data_form.iana_zone.label }}</label>
+          {{ market_data_form.iana_zone }}
+          <p class="section-subcopy mb-0">{{ market_data_form.iana_zone.help_text }}</p>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">
+          Store M1 approximation evidence
+        </button>
+      </div>
+    </form>
+
+    {% if excursion_state and excursion_summary %}
+    <div class="broker-bar-meta mt-4">
+      <div>Source basename: {{ excursion_summary.market_provenance.source_basename }}</div>
+      <div>Declared source: {{ excursion_summary.market_provenance.declared_source }}</div>
+      <div>Declared export method: {{ excursion_summary.market_provenance.declared_export_method }}</div>
+      <div>SHA-256: {{ excursion_summary.market_provenance.market_file_sha256 }}</div>
+      <div>Byte size: {{ excursion_summary.market_provenance.file_byte_size }}</div>
+      <div>Bar timestamp semantic: {{ excursion_summary.market_provenance.bar_timestamp_semantic }}</div>
+      <div>Resolution: {{ excursion_summary.market_provenance.resolution }}</div>
+      <div>Evidence class: {{ excursion_summary.market_provenance.evidence_class }}</div>
+      <div>Precision: {{ excursion_summary.market_provenance.precision }}</div>
+      <div>Price basis: {{ excursion_summary.market_provenance.price_basis }}</div>
+      <div>Contract version: {{ excursion_summary.market_provenance.contract_version }}</div>
+      <div>Declared time basis: {{ excursion_summary.time_basis.kind }}</div>
+      {% if excursion_summary.time_basis.offset_minutes != None %}
+      <div>Offset minutes: {{ excursion_summary.time_basis.offset_minutes }}</div>
+      {% endif %}
+      {% if excursion_summary.time_basis.zone %}
+      <div>IANA zone: {{ excursion_summary.time_basis.zone }}</div>
+      {% endif %}
+      <div>Journal fingerprint: {{ excursion_summary.journal_fingerprint }}</div>
+      <div>Source row count: {{ excursion_summary.market_provenance.source_row_count }}</div>
+      <div>Valid row count: {{ excursion_summary.market_provenance.valid_row_count }}</div>
+      <div>Symbols: {{ excursion_summary.market_provenance.symbols|join:", " }}</div>
+      {% for item in excursion_summary.market_provenance.coverage %}
+      <div>
+        Coverage {{ item.symbol }}:
+        {{ item.coverage_start }} to {{ item.coverage_end }}
+      </div>
+      {% endfor %}
+      <div>Matched trade count: {{ excursion_summary.matched_trade_count }}</div>
+      <div>Status counts: {{ excursion_summary.status_counts }}</div>
+      <div>Reason counts: {{ excursion_summary.reason_counts }}</div>
+      <div>PRICE_COMPARISON_EPSILON: {{ price_comparison_epsilon }}</div>
+      <div>DURATION_TOLERANCE_SECONDS: {{ duration_tolerance_seconds }}</div>
+    </div>
+    {% endif %}
+  </div>
+</section>
 
 
 {# ------------------------------------------------------------------ #}

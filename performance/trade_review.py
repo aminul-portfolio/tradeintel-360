@@ -6,6 +6,8 @@ from typing import Any
 
 import pandas as pd
 
+from .excursion import canonical_ticket
+
 PIPS_MOVEMENT_TOLERANCE = 0.1
 TRADE_PAGE_SIZE = 10
 
@@ -63,6 +65,22 @@ SORT_WHITELIST = {
         "columns": ("_movement_value",),
         "kind": "numeric",
     },
+    "interval_high": {
+        "columns": ("_excursion_interval_high",),
+        "kind": "numeric",
+    },
+    "interval_low": {
+        "columns": ("_excursion_interval_low",),
+        "kind": "numeric",
+    },
+    "mfe": {
+        "columns": ("_excursion_mfe",),
+        "kind": "numeric",
+    },
+    "mae": {
+        "columns": ("_excursion_mae",),
+        "kind": "numeric",
+    },
 }
 
 DISPLAY_COLUMNS = (
@@ -80,6 +98,63 @@ DISPLAY_COLUMNS = (
     ("commission", "Commission", ("Commission", "Commissions")),
     ("swap", "Swap", ("Swap",)),
 )
+
+EXCURSION_INTERNAL_COLUMNS = (
+    "_excursion_interval_high",
+    "_excursion_interval_low",
+    "_excursion_mfe",
+    "_excursion_mae",
+    "_excursion_status",
+    "_excursion_reason",
+    "_excursion_high_from_boundary_bar",
+    "_excursion_low_from_boundary_bar",
+    "_excursion_entry_outside_first_bar_range",
+    "_excursion_exit_outside_last_bar_range",
+    "_excursion_realised_outside_interval",
+)
+
+EVIDENCE_DISPLAY_COLUMNS = (
+    (
+        "interval_high",
+        "Approx. Interval High",
+        ("_excursion_interval_high",),
+        "evidence_numeric",
+    ),
+    (
+        "interval_low",
+        "Approx. Interval Low",
+        ("_excursion_interval_low",),
+        "evidence_numeric",
+    ),
+    (
+        "mfe",
+        "Approx. MFE (price pts)",
+        ("_excursion_mfe",),
+        "evidence_numeric",
+    ),
+    (
+        "mae",
+        "Approx. MAE (price pts)",
+        ("_excursion_mae",),
+        "evidence_numeric",
+    ),
+    (
+        "bar_evidence",
+        "Bar Evidence",
+        ("_excursion_status",),
+        "evidence_status",
+    ),
+)
+
+BAR_EVIDENCE_LABELS = {
+    "COMPUTED": "Computed",
+    "INVALID_TRADE_DATA": "Invalid trade data",
+    "TIMEZONE_AMBIGUOUS": "Time unresolved",
+    "TIME_BASIS_INCONSISTENT": "Time basis inconsistent",
+    "NO_MARKET_DATA": "No market data",
+    "INCOMPLETE_COVERAGE": "Incomplete coverage",
+    "INVARIANT_VIOLATION": "Evidence unavailable",
+}
 
 
 def _first_present(columns, candidates):
@@ -309,6 +384,50 @@ def sort_trade_review(
     return dataframe.loc[ordered.index].copy()
 
 
+def attach_excursion_evidence(
+    dataframe: pd.DataFrame,
+    evidence: Any,
+) -> pd.DataFrame:
+    if dataframe is None:
+        return pd.DataFrame()
+    frame = dataframe.copy()
+    for name in EXCURSION_INTERNAL_COLUMNS:
+        frame[name] = None
+    mapping = evidence if isinstance(evidence, dict) else {}
+    if "Ticket" not in frame.columns:
+        return frame
+    values = {name: [] for name in EXCURSION_INTERNAL_COLUMNS}
+    for raw_ticket in frame["Ticket"]:
+        ticket = canonical_ticket(raw_ticket)
+        item = mapping.get(ticket) if ticket else None
+        if not isinstance(item, dict):
+            item = {}
+        values["_excursion_interval_high"].append(item.get("interval_high"))
+        values["_excursion_interval_low"].append(item.get("interval_low"))
+        values["_excursion_mfe"].append(item.get("mfe"))
+        values["_excursion_mae"].append(item.get("mae"))
+        values["_excursion_status"].append(item.get("status"))
+        values["_excursion_reason"].append(item.get("reason_code"))
+        values["_excursion_high_from_boundary_bar"].append(
+            bool(item.get("high_from_boundary_bar"))
+        )
+        values["_excursion_low_from_boundary_bar"].append(
+            bool(item.get("low_from_boundary_bar"))
+        )
+        values["_excursion_entry_outside_first_bar_range"].append(
+            bool(item.get("entry_outside_first_bar_range"))
+        )
+        values["_excursion_exit_outside_last_bar_range"].append(
+            bool(item.get("exit_outside_last_bar_range"))
+        )
+        values["_excursion_realised_outside_interval"].append(
+            bool(item.get("realised_outside_interval"))
+        )
+    for name, column_values in values.items():
+        frame[name] = column_values
+    return frame
+
+
 def build_trade_review_columns(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
     columns = []
     available = set(dataframe.columns) if dataframe is not None else set()
@@ -334,6 +453,20 @@ def build_trade_review_columns(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
             "kind": "movement",
         }
     )
+    if all(name in available for name in ("_excursion_status", "_excursion_mfe")):
+        for key, label, candidates, kind in EVIDENCE_DISPLAY_COLUMNS:
+            source = _first_present(available, candidates)
+            if source is None:
+                continue
+            columns.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "sort_key": key if key in SORT_WHITELIST else "",
+                    "source_column": source,
+                    "kind": kind,
+                }
+            )
     return columns
 
 
@@ -401,11 +534,69 @@ def _cell_alignment_class(column_key: str) -> str:
         "commission",
         "swap",
         "movement",
+        "interval_high",
+        "interval_low",
+        "mfe",
+        "mae",
     }:
         return "trade-review-cell--numeric"
     if column_key in {"open_time", "close_time"}:
         return "trade-review-cell--date"
     return ""
+
+
+def format_evidence_value(value: Any) -> str:
+    if _is_missing(value):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(number):
+        return ""
+    if number == 0:
+        return "0"
+    try:
+        normalised = Decimal(format(number, ".15g"))
+    except (InvalidOperation, ValueError):
+        return ""
+    if normalised == 0:
+        try:
+            normalised = Decimal(format(number, ".17g"))
+        except (InvalidOperation, ValueError):
+            return ""
+        if normalised == 0:
+            return "0"
+    text = format(normalised, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    if text in {"", "-", "-0"}:
+        return "0"
+    return text
+
+
+def format_bar_evidence_status(value: Any) -> str:
+    if _is_missing(value):
+        return ""
+    return BAR_EVIDENCE_LABELS.get(str(value), str(value))
+
+
+def bar_evidence_notes(raw: Any) -> tuple[str, str]:
+    reason = raw.get("_excursion_reason") or ""
+    if str(raw.get("_excursion_status") or "") != "COMPUTED":
+        return str(reason) if reason and not _is_missing(reason) else "", ""
+    notes = []
+    if raw.get("_excursion_high_from_boundary_bar") or raw.get(
+        "_excursion_low_from_boundary_bar"
+    ):
+        notes.append("Boundary extreme")
+    if raw.get("_excursion_entry_outside_first_bar_range"):
+        notes.append("Entry outside first M1 bar range")
+    if raw.get("_excursion_exit_outside_last_bar_range"):
+        notes.append("Exit outside last M1 bar range")
+    if raw.get("_excursion_realised_outside_interval"):
+        notes.append("Realised move outside M1 envelope")
+    return str(reason) if reason and not _is_missing(reason) else "", "; ".join(notes)
 
 
 def format_movement_value(value: Any) -> str:
@@ -458,6 +649,30 @@ def build_trade_review_rows(
                             if bool(raw.get("_movement_disagreement"))
                             else ""
                         ),
+                    }
+                )
+                continue
+            if column["kind"] == "evidence_numeric":
+                value = raw.get(column["source_column"])
+                cells.append(
+                    {
+                        "value": format_evidence_value(value),
+                        "css_class": _cell_alignment_class(column["key"]),
+                        "note": "",
+                        "flag": "",
+                    }
+                )
+                continue
+            if column["kind"] == "evidence_status":
+                note, flag = bar_evidence_notes(raw)
+                cells.append(
+                    {
+                        "value": format_bar_evidence_status(
+                            raw.get(column["source_column"])
+                        ),
+                        "css_class": "",
+                        "note": note,
+                        "flag": flag,
                     }
                 )
                 continue

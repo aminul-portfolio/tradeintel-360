@@ -1,13 +1,54 @@
+import datetime as dt
 import re
+import types
+import zipfile
+from contextlib import contextmanager
 from io import BytesIO
+from unittest.mock import patch
 
 import pandas as pd
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .analytics import apply_analysis
+from .excursion import compute_journal_fingerprint
+from .excursion_state import EXCURSION_SESSION_KEY
+from .forms import DECLARED_EXPORT_CTRADER_CBOT, MarketDataUploadForm
+from .market_data import EXCURSION_CONTRACT_VERSION, MAX_MARKET_DATA_BYTES
+from .models import TradingFile
 from .trade_review import PIPS_MOVEMENT_TOLERANCE
+
+_FIXED_XLSX_DATETIME = dt.datetime(2026, 6, 25, 10, 30, 0)
+_FIXED_ZIP_DATE_TIME = (2026, 6, 25, 10, 30, 0)
+
+
+class _FrozenXlsxDateTime(dt.datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return _FIXED_XLSX_DATETIME
+
+
+_FROZEN_XLSX_DATETIME_MODULE = types.SimpleNamespace(
+    datetime=_FrozenXlsxDateTime,
+    timezone=dt.timezone,
+)
+
+
+@contextmanager
+def freeze_xlsx_timestamps():
+    real_init = zipfile.ZipInfo.__init__
+
+    def frozen_init(self, filename="NoName", date_time=None):
+        real_init(self, filename, _FIXED_ZIP_DATE_TIME)
+
+    with (
+        patch("openpyxl.packaging.core.datetime", _FROZEN_XLSX_DATETIME_MODULE),
+        patch("openpyxl.writer.excel.datetime", _FROZEN_XLSX_DATETIME_MODULE),
+        patch.object(zipfile.ZipInfo, "__init__", frozen_init),
+    ):
+        yield
 
 
 class AnalysisExperienceTests(SimpleTestCase):
@@ -2017,3 +2058,868 @@ class DashboardAnalysisIntegrationTests(TestCase):
             PIPS_MOVEMENT_TOLERANCE,
             0.1,
         )
+
+
+class MarketDataUploadFormTests(SimpleTestCase):
+    def _file(self, content=b"TimestampUTC,Symbol,Open,High,Low,Close\n"):
+        return SimpleUploadedFile("bars.csv", content)
+
+    def _data(self, **overrides):
+        data = {
+            "declared_source": "user_declared_export",
+            "declared_export_method": DECLARED_EXPORT_CTRADER_CBOT,
+            "time_basis_kind": "UTC",
+        }
+        data.update(overrides)
+        return data
+
+    def test_valid_utc_fixed_offset_and_iana_forms(self):
+        utc = MarketDataUploadForm(
+            data=self._data(),
+            files={"market_file": self._file()},
+        )
+        offset = MarketDataUploadForm(
+            data=self._data(
+                time_basis_kind="FIXED_OFFSET",
+                offset_minutes=60,
+            ),
+            files={"market_file": self._file()},
+        )
+        iana = MarketDataUploadForm(
+            data=self._data(
+                time_basis_kind="IANA",
+                iana_zone="Europe/London",
+            ),
+            files={"market_file": self._file()},
+        )
+        self.assertTrue(utc.is_valid(), utc.errors)
+        self.assertEqual(utc.cleaned_data["time_basis"].kind, "UTC")
+        self.assertTrue(offset.is_valid(), offset.errors)
+        self.assertEqual(offset.cleaned_data["time_basis"].offset_minutes, 60)
+        self.assertTrue(iana.is_valid(), iana.errors)
+        self.assertEqual(iana.cleaned_data["time_basis"].zone, "Europe/London")
+
+    def test_missing_or_invalid_time_basis_and_locked_export_method(self):
+        missing_offset = MarketDataUploadForm(
+            data=self._data(time_basis_kind="FIXED_OFFSET"),
+            files={"market_file": self._file()},
+        )
+        missing_zone = MarketDataUploadForm(
+            data=self._data(time_basis_kind="IANA"),
+            files={"market_file": self._file()},
+        )
+        bad_offset = MarketDataUploadForm(
+            data=self._data(
+                time_basis_kind="FIXED_OFFSET",
+                offset_minutes=62,
+            ),
+            files={"market_file": self._file()},
+        )
+        bad_zone = MarketDataUploadForm(
+            data=self._data(
+                time_basis_kind="IANA",
+                iana_zone="Not/AZone",
+            ),
+            files={"market_file": self._file()},
+        )
+        utc_conflict = MarketDataUploadForm(
+            data=self._data(offset_minutes=60),
+            files={"market_file": self._file()},
+        )
+        locked = MarketDataUploadForm(
+            data=self._data(declared_export_method="manual_csv"),
+            files={"market_file": self._file()},
+        )
+        missing_source = MarketDataUploadForm(
+            data=self._data(declared_source=""),
+            files={"market_file": self._file()},
+        )
+        self.assertFalse(missing_offset.is_valid())
+        self.assertFalse(missing_zone.is_valid())
+        self.assertFalse(bad_offset.is_valid())
+        self.assertFalse(bad_zone.is_valid())
+        self.assertFalse(utc_conflict.is_valid())
+        self.assertFalse(locked.is_valid())
+        self.assertFalse(missing_source.is_valid())
+
+    def test_oversized_file_is_rejected_before_read(self):
+        uploaded = SimpleUploadedFile("huge.csv", b"tiny")
+        uploaded.size = MAX_MARKET_DATA_BYTES + 1
+        form = MarketDataUploadForm(
+            data=self._data(),
+            files={"market_file": uploaded},
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("market_file", form.errors)
+
+
+class BrokerBarUploadIntegrationTests(TestCase):
+    FORBIDDEN_CLAIMS = (
+        "Verified FTMO broker bars",
+        "Verified broker data",
+        "True MFE",
+        "True MAE",
+        "Exact in-trade high",
+        "Exact in-trade low",
+    )
+    CROSS_SYMBOL_WARNING = (
+        "MFE/MAE use each trade's instrument price points. "
+        "Values across different symbols are not directly comparable."
+    )
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username="broker-bar-user",
+            email="broker-bar@example.com",
+            password="test-password-123",
+        )
+        self.client.force_login(self.user)
+        self.dashboard_url = reverse("performance:dashboard")
+        self.upload_url = reverse("performance:upload_market_data")
+
+    def _journal_frame(self, rows=None):
+        if rows is None:
+            rows = [
+                {
+                    "Ticket": 1,
+                    "Open Time": "25 Jun 2026 10:30:15",
+                    "Close Time": "25 Jun 2026 10:31:20",
+                    "Symbol": "US100.cash",
+                    "Type": "buy",
+                    "Entry": 100.0,
+                    "Exit": 105.0,
+                    "Profit": 10.0,
+                    "Volume": 1.0,
+                    "Notes": "ok",
+                },
+                {
+                    "Ticket": 2,
+                    "Open Time": "25 Jun 2026 10:30:15",
+                    "Close Time": "25 Jun 2026 10:31:20",
+                    "Symbol": "EURUSD",
+                    "Type": "sell",
+                    "Entry": 1.20,
+                    "Exit": 1.10,
+                    "Profit": 5.0,
+                    "Volume": 2.0,
+                    "Notes": "ok",
+                },
+            ]
+        return pd.DataFrame(rows)
+
+    def _store_journal(self, frame):
+        session = self.client.session
+        session["cleaned_data"] = frame.to_json(
+            orient="split",
+            date_format="iso",
+        )
+        session["last_uploaded_file"] = r"trading_files\user_4\history.csv"
+        session.save()
+        return frame
+
+    def _market_bytes(self, extra_rows=None):
+        rows = [
+            "TimestampUTC,Symbol,Open,High,Low,Close",
+            "2026-06-25T10:30:00Z,US100.cash,100,110,90,101",
+            "2026-06-25T10:31:00Z,US100.cash,101,112,91,102",
+            "2026-06-25T10:30:00Z,EURUSD,1.10,1.25,1.05,1.15",
+            "2026-06-25T10:31:00Z,EURUSD,1.15,1.22,1.00,1.12",
+        ]
+        if extra_rows:
+            rows.extend(extra_rows)
+        return ("\n".join(rows) + "\n").encode("utf-8")
+
+    def _upload_files(self, payload=None, name="bars.csv"):
+        return {
+            "market_file": SimpleUploadedFile(
+                name,
+                payload if payload is not None else self._market_bytes(),
+            )
+        }
+
+    def _upload_data(self, **overrides):
+        data = {
+            "declared_source": "user_declared_export",
+            "declared_export_method": DECLARED_EXPORT_CTRADER_CBOT,
+            "time_basis_kind": "UTC",
+        }
+        data.update(overrides)
+        return data
+
+    def _post_upload(self, data=None, files=None, follow=False):
+        payload = {}
+        payload.update(data if data is not None else self._upload_data())
+        payload.update(files if files is not None else self._upload_files())
+        return self.client.post(
+            self.upload_url,
+            data=payload,
+            follow=follow,
+        )
+
+    def _session_state(self):
+        return self.client.session.get(EXCURSION_SESSION_KEY)
+
+    def _seed_bound_state(self, frame, evidence, status_counts=None, sha="abc123"):
+        fingerprint = compute_journal_fingerprint(frame)
+        payload = {
+            "contract_version": EXCURSION_CONTRACT_VERSION,
+            "journal_fingerprint": fingerprint,
+            "market_file_sha256": sha,
+            "time_basis": {"kind": "UTC", "resolution": "USER_DECLARED"},
+            "market_provenance": {
+                "source_basename": "bars.csv",
+                "market_file_sha256": sha,
+                "file_byte_size": 128,
+                "declared_source": "user_declared_export",
+                "declared_export_method": DECLARED_EXPORT_CTRADER_CBOT,
+                "bar_timestamp_semantic": "BAR_OPEN_TIME",
+                "resolution": "M1",
+                "evidence_class": "BROKER_BAR_SOURCE",
+                "precision": "M1_BAR_APPROXIMATE",
+                "price_basis": "UNSPECIFIED_CTRADER_HISTORICAL_BAR",
+                "contract_version": EXCURSION_CONTRACT_VERSION,
+                "source_row_count": 4,
+                "valid_row_count": 4,
+                "symbols": ["EURUSD", "US100.cash"],
+                "coverage": [
+                    {
+                        "symbol": "US100.cash",
+                        "coverage_start": "2026-06-25T10:30:00Z",
+                        "coverage_end": "2026-06-25T10:31:00Z",
+                    }
+                ],
+            },
+            "run_status": "OK",
+            "status_counts": status_counts or {"COMPUTED": len(evidence)},
+            "reason_counts": {},
+            "evidence": evidence,
+        }
+        session = self.client.session
+        session[EXCURSION_SESSION_KEY] = payload
+        session.save()
+        return payload
+
+    def _evidence_item(self, ticket, **overrides):
+        item = {
+            "ticket": str(ticket),
+            "status": "COMPUTED",
+            "reason_code": "OK",
+            "interval_high": 110.0,
+            "interval_low": 90.0,
+            "mfe": 10.0,
+            "mae": 4.0,
+            "high_from_boundary_bar": False,
+            "low_from_boundary_bar": False,
+            "entry_outside_first_bar_range": False,
+            "exit_outside_last_bar_range": False,
+            "realised_outside_interval": False,
+        }
+        item.update(overrides)
+        return item
+
+    def _column_index(self, response, key):
+        for index, column in enumerate(response.context["trade_review_columns"]):
+            if column["key"] == key:
+                return index
+        self.fail(f"Missing Trade Review column {key}")
+
+    def _trade_review_markup(self, content):
+        match = re.search(
+            r'<section class="dash-section" id="trade-review">(.*?)</section>',
+            content,
+            re.S,
+        )
+        self.assertIsNotNone(match)
+        return match.group(1)
+
+    def _context_payload(self, context):
+        return {
+            "source_filename": context.source_filename,
+            "source_row_count": context.source_row_count,
+            "filtered_row_count": context.filtered_row_count,
+            "active_filters": dict(context.active_filters),
+            "is_zero_result": context.is_zero_result,
+        }
+
+    def _assert_trade_review_href(
+        self,
+        href,
+        *,
+        sort_key=None,
+        trade_dir=None,
+        filters=(),
+        trade_page=None,
+        allow_trade_page=False,
+    ):
+        decoded = href.replace("&amp;", "&")
+        self.assertTrue(decoded.endswith("#trade-review"), decoded)
+        self.assertEqual(decoded.count("#trade-review"), 1, decoded)
+        self.assertNotIn("%23trade-review", decoded)
+        if sort_key is not None:
+            self.assertIn(f"trade_sort={sort_key}", decoded)
+        if trade_dir is not None:
+            self.assertIn(f"trade_dir={trade_dir}", decoded)
+        for item in filters:
+            self.assertIn(item, decoded)
+        if trade_page is not None:
+            self.assertIn(f"trade_page={trade_page}", decoded)
+        elif not allow_trade_page:
+            self.assertNotIn("trade_page", decoded)
+
+    def _sort_href_map(self, review):
+        found = {}
+        for match in re.finditer(
+            r'<a\s+class="trade-review-sort"\s+href="([^"]+)"',
+            review,
+        ):
+            href = match.group(1)
+            decoded = href.replace("&amp;", "&")
+            key_match = re.search(r"trade_sort=([a-z_]+)", decoded)
+            if key_match:
+                found[key_match.group(1)] = href
+        return found
+
+    def test_route_auth_and_post_only(self):
+        self.assertEqual(
+            self.upload_url,
+            "/performance/market-data/upload/",
+        )
+        get_response = self.client.get(self.upload_url)
+        self.assertEqual(get_response.status_code, 405)
+        self.assertIsNone(self._session_state())
+
+        self.client.logout()
+        anonymous_payload = {}
+        anonymous_payload.update(self._upload_data())
+        anonymous_payload.update(self._upload_files())
+        anonymous = self.client.post(
+            self.upload_url,
+            data=anonymous_payload,
+        )
+        self.assertEqual(anonymous.status_code, 302)
+        self.assertIn("/login/", anonymous.url)
+
+    def test_pre_read_limit_rejects_before_parser(self):
+        self._store_journal(self._journal_frame())
+        with (
+            patch("performance.forms.MAX_MARKET_DATA_BYTES", 1),
+            patch("performance.views.parse_market_data_bytes") as mocked,
+        ):
+            response = self._post_upload()
+        mocked.assert_not_called()
+        self.assertRedirects(response, self.dashboard_url)
+        self.assertIsNone(self._session_state())
+
+    def test_no_journal_fails_safely(self):
+        response = self._post_upload()
+        self.assertRedirects(response, self.dashboard_url)
+        self.assertIsNone(self._session_state())
+        self.assertEqual(TradingFile.objects.count(), 0)
+
+    def test_invalid_market_data_clears_old_evidence_and_keeps_journal(self):
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(
+            frame,
+            {"1": self._evidence_item(1)},
+            sha="old-sha",
+        )
+        self.assertIsNotNone(self._session_state())
+
+        response = self._post_upload(
+            files=self._upload_files(b"not,a,valid,csv\n1,2,3\n")
+        )
+        self.assertRedirects(response, self.dashboard_url)
+        self.assertIsNone(self._session_state())
+        self.assertIn("cleaned_data", self.client.session)
+        self.assertEqual(TradingFile.objects.count(), 0)
+
+    def test_successful_utc_fixed_offset_and_iana_uploads(self):
+        self._store_journal(self._journal_frame())
+        utc = self._post_upload()
+        self.assertRedirects(utc, self.dashboard_url)
+        state = self._session_state()
+        self.assertIsNotNone(state)
+        self.assertEqual(state["time_basis"]["kind"], "UTC")
+        self.assertEqual(
+            state["market_provenance"]["declared_source"],
+            "user_declared_export",
+        )
+        self.assertTrue(state["journal_fingerprint"])
+        self.assertNotIn("raw_bytes", state)
+        self.assertNotIn("raw_csv", self.client.session)
+        self.assertNotIn("market_dataframe", self.client.session)
+        self.assertEqual(TradingFile.objects.count(), 0)
+        session_blob = str(self.client.session.get(EXCURSION_SESSION_KEY))
+        self.assertNotIn("TimestampUTC", session_blob)
+
+        offset_journal = self._journal_frame(
+            [
+                {
+                    "Ticket": 10,
+                    "Open Time": "25 Jun 2026 11:30:15",
+                    "Close Time": "25 Jun 2026 11:31:20",
+                    "Symbol": "US100.cash",
+                    "Type": "buy",
+                    "Entry": 100.0,
+                    "Exit": 105.0,
+                    "Profit": 10.0,
+                }
+            ]
+        )
+        self._store_journal(offset_journal)
+        offset = self._post_upload(
+            data=self._upload_data(
+                time_basis_kind="FIXED_OFFSET",
+                offset_minutes=60,
+            )
+        )
+        self.assertRedirects(offset, self.dashboard_url)
+        self.assertEqual(self._session_state()["time_basis"]["kind"], "FIXED_OFFSET")
+        self.assertEqual(self._session_state()["time_basis"]["offset_minutes"], 60)
+
+        iana_journal = self._journal_frame(
+            [
+                {
+                    "Ticket": 11,
+                    "Open Time": "25 Jun 2026 11:30:15",
+                    "Close Time": "25 Jun 2026 11:31:20",
+                    "Symbol": "US100.cash",
+                    "Type": "buy",
+                    "Entry": 100.0,
+                    "Exit": 105.0,
+                    "Profit": 10.0,
+                }
+            ]
+        )
+        self._store_journal(iana_journal)
+        iana = self._post_upload(
+            data=self._upload_data(
+                time_basis_kind="IANA",
+                iana_zone="Europe/London",
+            )
+        )
+        self.assertRedirects(iana, self.dashboard_url)
+        self.assertEqual(self._session_state()["time_basis"]["kind"], "IANA")
+        self.assertEqual(self._session_state()["time_basis"]["zone"], "Europe/London")
+
+    def test_join_key_failure_is_not_stored(self):
+        self._store_journal(
+            pd.DataFrame(
+                {
+                    "Open Time": ["25 Jun 2026 10:30:15"],
+                    "Close Time": ["25 Jun 2026 10:31:20"],
+                    "Symbol": ["US100.cash"],
+                    "Type": ["buy"],
+                    "Entry": [100.0],
+                    "Exit": [105.0],
+                    "Profit": [10.0],
+                }
+            )
+        )
+        response = self._post_upload()
+        self.assertRedirects(response, self.dashboard_url)
+        self.assertIsNone(self._session_state())
+
+    def test_successful_replacement_and_failed_replacement(self):
+        self._store_journal(self._journal_frame())
+        first = self._post_upload(
+            files=self._upload_files(self._market_bytes(), name="old.csv")
+        )
+        self.assertRedirects(first, self.dashboard_url)
+        old_state = self._session_state()
+        old_sha = old_state["market_file_sha256"]
+        old_tickets = set(old_state["evidence"])
+
+        replacement_bytes = self._market_bytes(
+            extra_rows=[
+                "2026-06-25T10:32:00Z,US100.cash,102,130,80,103",
+                "2026-06-25T10:32:00Z,EURUSD,1.12,1.30,0.90,1.10",
+            ]
+        )
+        second = self._post_upload(
+            files=self._upload_files(replacement_bytes, name="new.csv")
+        )
+        self.assertRedirects(second, self.dashboard_url)
+        new_state = self._session_state()
+        self.assertNotEqual(new_state["market_file_sha256"], old_sha)
+        self.assertEqual(new_state["market_provenance"]["source_basename"], "new.csv")
+        self.assertTrue(old_tickets)
+        self.assertTrue(new_state["evidence"])
+
+        failed = self._post_upload(files=self._upload_files(b"bad-csv"))
+        self.assertRedirects(failed, self.dashboard_url)
+        self.assertIsNone(self._session_state())
+        self.assertIn("cleaned_data", self.client.session)
+
+    def test_dashboard_lazy_binding_and_stale_invalidation(self):
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(frame, {"1": self._evidence_item(1), "2": self._evidence_item(2)})
+        shown = self.client.get(self.dashboard_url)
+        self.assertIsNotNone(shown.context["excursion_state"])
+        labels = [column["label"] for column in shown.context["trade_review_columns"]]
+        self.assertIn("Approx. MFE (price pts)", labels)
+
+        changed = frame.copy()
+        changed.loc[0, "Entry"] = 101.0
+        self._store_journal(changed)
+        session = self.client.session
+        session[EXCURSION_SESSION_KEY] = shown.context["excursion_state"]
+        session.save()
+        stale = self.client.get(self.dashboard_url)
+        self.assertIsNone(stale.context["excursion_state"])
+        self.assertIsNone(self._session_state())
+
+        no_fp = self._journal_frame()
+        no_fp = no_fp.drop(columns=["Ticket"])
+        self._store_journal(no_fp)
+        session = self.client.session
+        session[EXCURSION_SESSION_KEY] = {
+            "contract_version": EXCURSION_CONTRACT_VERSION,
+            "journal_fingerprint": "stale",
+            "market_file_sha256": "abc",
+            "time_basis": {"kind": "UTC", "resolution": "USER_DECLARED"},
+            "market_provenance": {"declared_source": "x"},
+            "run_status": "OK",
+            "status_counts": {},
+            "reason_counts": {},
+            "evidence": {"1": self._evidence_item(1)},
+        }
+        session.save()
+        missing_fp = self.client.get(self.dashboard_url)
+        self.assertIsNone(missing_fp.context["excursion_state"])
+
+        session = self.client.session
+        session.pop("cleaned_data", None)
+        session[EXCURSION_SESSION_KEY] = {
+            "contract_version": EXCURSION_CONTRACT_VERSION,
+            "journal_fingerprint": "stale",
+            "market_file_sha256": "abc",
+            "time_basis": {"kind": "UTC", "resolution": "USER_DECLARED"},
+            "market_provenance": {"declared_source": "x"},
+            "run_status": "OK",
+            "status_counts": {},
+            "reason_counts": {},
+            "evidence": {"1": self._evidence_item(1)},
+        }
+        session.save()
+        empty = self.client.get(self.dashboard_url)
+        self.assertIsNone(empty.context["excursion_state"])
+        self.assertIsNone(self._session_state())
+
+    def test_filters_do_not_recompute_and_keep_full_journal_evidence(self):
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=21.0),
+                "2": self._evidence_item(2, mfe=3.5),
+            },
+        )
+        with patch("performance.views.compute_excursion_evidence") as mocked:
+            response = self.client.get(
+                self.dashboard_url,
+                {"symbol": "US100", "q": "buy"},
+            )
+        mocked.assert_not_called()
+        self.assertEqual(response.context["analysis_context"].filtered_row_count, 1)
+        mfe_index = self._column_index(response, "mfe")
+        values = [
+            row["cells"][mfe_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertEqual(values, ["21"])
+
+    def test_trade_review_visibility_blank_vs_zero(self):
+        frame = self._store_journal(self._journal_frame())
+        absent = self.client.get(self.dashboard_url)
+        absent_labels = [column["label"] for column in absent.context["trade_review_columns"]]
+        self.assertNotIn("Approx. Interval High", absent_labels)
+
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=0.0, mae=0.0),
+                "2": self._evidence_item(
+                    2,
+                    status="NO_MARKET_DATA",
+                    reason_code="OUTSIDE_FILE_RANGE",
+                    interval_high=None,
+                    interval_low=None,
+                    mfe=None,
+                    mae=None,
+                ),
+            },
+        )
+        present = self.client.get(self.dashboard_url)
+        labels = [column["label"] for column in present.context["trade_review_columns"]]
+        self.assertEqual(
+            labels[-5:],
+            [
+                "Approx. Interval High",
+                "Approx. Interval Low",
+                "Approx. MFE (price pts)",
+                "Approx. MAE (price pts)",
+                "Bar Evidence",
+            ],
+        )
+        mfe_index = self._column_index(present, "mfe")
+        values = [
+            row["cells"][mfe_index]["value"]
+            for row in present.context["trade_page"].object_list
+        ]
+        self.assertIn("0", values)
+        self.assertIn("", values)
+
+    def test_evidence_sort_before_pagination_and_accessibility(self):
+        rows = []
+        evidence = {}
+        for index in range(1, 13):
+            rows.append(
+                {
+                    "Ticket": index,
+                    "Open Time": "25 Jun 2026 10:30:15",
+                    "Close Time": "25 Jun 2026 10:31:20",
+                    "Symbol": "US100.cash" if index % 2 else "EURUSD",
+                    "Type": "buy",
+                    "Entry": 100.0,
+                    "Exit": 105.0,
+                    "Profit": float(index),
+                    "Volume": 1.0,
+                    "Notes": "ok",
+                }
+            )
+            if index == 12:
+                evidence[str(index)] = self._evidence_item(
+                    index,
+                    mfe=None,
+                    mae=None,
+                    interval_high=None,
+                    interval_low=None,
+                    status="NO_MARKET_DATA",
+                )
+            else:
+                evidence[str(index)] = self._evidence_item(
+                    index,
+                    mfe=float(index),
+                    mae=float(20 - index),
+                    interval_high=100.0 + index,
+                    interval_low=80.0 + (index % 3),
+                )
+        frame = self._store_journal(pd.DataFrame(rows))
+        self._seed_bound_state(frame, evidence)
+
+        page_one = self.client.get(
+            self.dashboard_url,
+            {"trade_sort": "mfe", "trade_dir": "desc", "trade_page": "1"},
+        )
+        mfe_index = self._column_index(page_one, "mfe")
+        page_values = [
+            row["cells"][mfe_index]["value"]
+            for row in page_one.context["trade_page"].object_list
+        ]
+        self.assertEqual(len(page_values), 10)
+        self.assertEqual(page_values[0], "11")
+        self.assertNotIn("", page_values)
+
+        page_two = self.client.get(
+            self.dashboard_url,
+            {"trade_sort": "mfe", "trade_dir": "desc", "trade_page": "2"},
+        )
+        second_values = [
+            row["cells"][mfe_index]["value"]
+            for row in page_two.context["trade_page"].object_list
+        ]
+        self.assertEqual(second_values[-1], "")
+
+        mfe_column = None
+        for column in page_one.context["trade_review_columns"]:
+            if column["key"] == "mfe":
+                mfe_column = column
+                break
+        self.assertIsNotNone(mfe_column)
+        self.assertNotIn("trade_page", mfe_column["sort_query"])
+        self.assertIn("trade_sort=mfe", mfe_column["sort_query"])
+
+        filtered = self.client.get(
+            self.dashboard_url,
+            {
+                "symbol": "usd",
+                "q": "buy",
+                "trade_sort": "mae",
+                "trade_dir": "asc",
+            },
+        )
+        mae_column = None
+        for column in filtered.context["trade_review_columns"]:
+            if column["key"] == "mae":
+                mae_column = column
+                break
+        self.assertIn("symbol=usd", mae_column["sort_query"])
+        self.assertIn("q=buy", mae_column["sort_query"])
+        self.assertEqual(filtered.context["trade_query"].count("#"), 0)
+        self.assertIn("trade_sort=mae", filtered.context["trade_query"])
+
+        review = self._trade_review_markup(page_one.content.decode())
+        self.assertIn('aria-sort="descending"', review)
+        self.assertIn('aria-label="Sort by Approx. MFE (price pts), ascending"', review)
+        self.assertIn('aria-hidden="true"', review)
+
+        page_one_sorts = self._sort_href_map(review)
+        for key in ("interval_high", "interval_low", "mfe", "mae"):
+            self.assertIn(key, page_one_sorts)
+            self._assert_trade_review_href(
+                page_one_sorts[key],
+                sort_key=key,
+            )
+
+        filtered_review = self._trade_review_markup(filtered.content.decode())
+        filtered_sorts = self._sort_href_map(filtered_review)
+        analysis_filters = ("symbol=usd", "q=buy")
+        for key in ("interval_high", "interval_low", "mfe", "mae"):
+            self.assertIn(key, filtered_sorts)
+            self._assert_trade_review_href(
+                filtered_sorts[key],
+                sort_key=key,
+                filters=analysis_filters,
+            )
+
+        paged = self.client.get(
+            self.dashboard_url,
+            {
+                "q": "buy",
+                "trade_sort": "mfe",
+                "trade_dir": "desc",
+                "trade_page": "1",
+            },
+        )
+        paged_review = self._trade_review_markup(paged.content.decode())
+        next_hrefs = re.findall(
+            r'<a\s+class="page-link"\s+href="([^"]+)"',
+            paged_review,
+        )
+        page_two_hrefs = [
+            href
+            for href in next_hrefs
+            if "trade_page=2" in href.replace("&amp;", "&")
+        ]
+        self.assertTrue(page_two_hrefs)
+        for href in page_two_hrefs:
+            self._assert_trade_review_href(
+                href,
+                sort_key="mfe",
+                trade_dir="desc",
+                filters=("q=buy",),
+                trade_page="2",
+                allow_trade_page=True,
+            )
+
+    def test_kpi_chart_and_export_invariance(self):
+        frame = self._store_journal(self._journal_frame())
+        filters = {"symbol": "US100", "q": "buy"}
+        without = self.client.get(self.dashboard_url, filters)
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=21.0),
+                "2": self._evidence_item(2, mfe=3.5),
+            },
+        )
+        with_state = self.client.get(self.dashboard_url, filters)
+
+        self.assertEqual(without.context["kpis"], with_state.context["kpis"])
+        self.assertEqual(
+            self._context_payload(without.context["analysis_context"]),
+            self._context_payload(with_state.context["analysis_context"]),
+        )
+        for key in ("chart_equity", "chart_profit", "chart_hist", "chart_month"):
+            self.assertEqual(
+                re.sub(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "PLOT-ID",
+                    without.context[key] or "",
+                ),
+                re.sub(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "PLOT-ID",
+                    with_state.context[key] or "",
+                ),
+            )
+        self.assertEqual(
+            without.context["chart_pie_sections"].keys(),
+            with_state.context["chart_pie_sections"].keys(),
+        )
+        for key, html in without.context["chart_pie_sections"].items():
+            self.assertEqual(
+                re.sub(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "PLOT-ID",
+                    html or "",
+                ),
+                re.sub(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                    "PLOT-ID",
+                    with_state.context["chart_pie_sections"][key] or "",
+                ),
+            )
+
+        csv_url = reverse("performance:download_cleaned_csv")
+        excel_url = reverse("performance:download_excel")
+        csv_without = self.client.get(csv_url)
+        session = self.client.session
+        session.pop(EXCURSION_SESSION_KEY, None)
+        session.save()
+        csv_plain = self.client.get(csv_url)
+        self.assertEqual(csv_without.content, csv_plain.content)
+        self.assertNotIn(b"Approx. MFE", csv_plain.content)
+        self.assertNotIn(b"Approx. MAE", csv_plain.content)
+
+        self._seed_bound_state(
+            frame,
+            {"1": self._evidence_item(1), "2": self._evidence_item(2)},
+        )
+        with freeze_xlsx_timestamps():
+            self.assertIs(dt.datetime, __import__("datetime").datetime)
+            self.assertIsNot(dt.datetime, _FrozenXlsxDateTime)
+            excel_with = self.client.get(excel_url)
+            session = self.client.session
+            session.pop(EXCURSION_SESSION_KEY, None)
+            session.save()
+            excel_without = self.client.get(excel_url)
+        self.assertEqual(excel_with.content, excel_without.content)
+        self.assertNotIn(b"Approx. MFE", excel_without.content)
+        self.assertNotIn(b"Approx. MAE", excel_without.content)
+
+    def test_provenance_card_claim_safety_and_matched_count(self):
+        self._store_journal(self._journal_frame())
+        self._post_upload()
+        response = self.client.get(self.dashboard_url)
+        html = response.content.decode()
+        self.assertContains(response, "Uploaded cTrader M1 bars")
+        self.assertContains(response, "Declared source")
+        self.assertContains(response, "M1 bar approximation")
+        self.assertContains(response, self.CROSS_SYMBOL_WARNING)
+        for claim in self.FORBIDDEN_CLAIMS:
+            self.assertNotIn(claim, html)
+        self.assertContains(response, "user_declared_export")
+        self.assertContains(response, DECLARED_EXPORT_CTRADER_CBOT)
+        self.assertContains(response, "SHA-256")
+        self.assertContains(response, "PRICE_COMPARISON_EPSILON")
+        self.assertContains(response, "DURATION_TOLERANCE_SECONDS")
+        self.assertContains(response, response.context["excursion_summary"]["journal_fingerprint"])
+
+        mixed = self._session_state()
+        mixed["status_counts"] = {
+            "COMPUTED": 2,
+            "INCOMPLETE_COVERAGE": 1,
+            "INVARIANT_VIOLATION": 1,
+            "NO_MARKET_DATA": 3,
+            "INVALID_TRADE_DATA": 2,
+            "TIMEZONE_AMBIGUOUS": 1,
+            "TIME_BASIS_INCONSISTENT": 1,
+        }
+        session = self.client.session
+        session[EXCURSION_SESSION_KEY] = mixed
+        session.save()
+        counted = self.client.get(self.dashboard_url)
+        self.assertEqual(counted.context["excursion_summary"]["matched_trade_count"], 4)

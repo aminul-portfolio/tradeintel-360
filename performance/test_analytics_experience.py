@@ -1857,6 +1857,53 @@ class DashboardAnalysisIntegrationTests(TestCase):
         self.assertIn("Pips", notes)
         self.assertIn("Price Move", notes)
         self.assertContains(response, "Realised movement")
+        values = [
+            row["cells"][movement_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertTrue(any(value.startswith("+") and "pips" in value for value in values))
+        self.assertTrue(any("price pts" in value for value in values))
+
+    def test_trade_review_disagreement_keeps_value_and_mismatch_badge(self):
+        frame = pd.DataFrame(
+            {
+                "Ticket": [1],
+                "Open Time": ["01 Sep 2026 10:00:00"],
+                "Symbol": ["XAUUSD"],
+                "Type": ["buy"],
+                "Price": [100],
+                "Price.1": [110],
+                "Profit": [10],
+                "Pips": [10.2],
+                "Notes": ["ok"],
+            }
+        )
+        session = self.client.session
+        session["cleaned_data"] = frame.to_json(orient="split", date_format="iso")
+        session["last_uploaded_file"] = r"trading_files\user_4\history.csv"
+        session.save()
+
+        response = self.client.get(self.dashboard_url)
+        movement_index = self._trade_column_index(response, "movement")
+        cell = response.context["trade_page"].object_list[0]["cells"][movement_index]
+        self.assertEqual(cell["value"], "+10.2 pips")
+        self.assertEqual(cell["flag"], "Mismatch")
+        self.assertEqual(
+            cell["title"],
+            "Broker Pips and calculated price move differ by more than 0.1.",
+        )
+        review = self._trade_review_markup(response.content.decode())
+        self.assertIn("+10.2 pips", review)
+        self.assertIn("Mismatch", review)
+        self.assertIn(
+            "Broker Pips and calculated price move differ by more than 0.1.",
+            review,
+        )
+        self.assertNotIn("should have held", review.lower())
+        self.assertNotIn("should have exited", review.lower())
+        self.assertNotIn("missed profit", review.lower())
+        self.assertNotIn("profit left on table", review.lower())
+        self.assertNotIn("optimal exit", review.lower())
 
     def _trade_review_markup(self, content):
         match = re.search(
@@ -2634,7 +2681,7 @@ class BrokerBarUploadIntegrationTests(TestCase):
         frame = self._store_journal(self._journal_frame())
         absent = self.client.get(self.dashboard_url)
         absent_labels = [column["label"] for column in absent.context["trade_review_columns"]]
-        self.assertNotIn("Approx. Interval High", absent_labels)
+        self.assertNotIn("Approx. Window High", absent_labels)
 
         self._seed_bound_state(
             frame,
@@ -2656,8 +2703,8 @@ class BrokerBarUploadIntegrationTests(TestCase):
         self.assertEqual(
             labels[-5:],
             [
-                "Approx. Interval High",
-                "Approx. Interval Low",
+                "Approx. Window High",
+                "Approx. Window Low",
                 "Approx. MFE (price pts)",
                 "Approx. MAE (price pts)",
                 "Bar Evidence",
@@ -2923,3 +2970,50 @@ class BrokerBarUploadIntegrationTests(TestCase):
         session.save()
         counted = self.client.get(self.dashboard_url)
         self.assertEqual(counted.context["excursion_summary"]["matched_trade_count"], 4)
+
+    def test_trade_review_scroll_wrapper_and_window_labels(self):
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=0.0, interval_high=16172.8, interval_low=16135.2),
+                "2": self._evidence_item(
+                    2,
+                    status="NO_MARKET_DATA",
+                    reason_code="OUTSIDE_FILE_RANGE",
+                    interval_high=None,
+                    interval_low=None,
+                    mfe=None,
+                    mae=None,
+                ),
+            },
+        )
+        response = self.client.get(self.dashboard_url)
+        html = response.content.decode()
+        review = self._trade_review_markup(html)
+        self.assertIn("trade-review-scroll", review)
+        self.assertIn("overflow-x: auto", html)
+        self.assertIn("min-width: 78rem", html)
+        self.assertIn("Approx. Window High", review)
+        self.assertIn("Approx. Window Low", review)
+        self.assertIn("Approx. MFE (price pts)", review)
+        self.assertIn("Approx. MAE (price pts)", review)
+        self.assertContains(response, self.CROSS_SYMBOL_WARNING)
+        for claim in self.FORBIDDEN_CLAIMS:
+            self.assertNotIn(claim, html)
+        labels = [column["label"] for column in response.context["trade_review_columns"]]
+        self.assertNotIn("Approx. Interval High", labels)
+        high_index = self._column_index(response, "interval_high")
+        mfe_index = self._column_index(response, "mfe")
+        values_high = [
+            row["cells"][high_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        values_mfe = [
+            row["cells"][mfe_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertIn("16172.8", values_high)
+        self.assertIn("", values_high)
+        self.assertIn("0", values_mfe)
+        self.assertIn("", values_mfe)

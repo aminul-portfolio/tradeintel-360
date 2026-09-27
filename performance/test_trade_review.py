@@ -20,6 +20,7 @@ from .trade_review import (
     enrich_trade_review,
     format_bar_evidence_status,
     format_evidence_value,
+    format_movement_value,
     format_volume_value,
     is_valid_pips,
     normalize_sort_direction,
@@ -411,8 +412,8 @@ class TradeReviewVolumeFormattingTests(SimpleTestCase):
 
 class TradeReviewExcursionEvidenceTests(SimpleTestCase):
     EVIDENCE_LABELS = (
-        "Approx. Interval High",
-        "Approx. Interval Low",
+        "Approx. Window High",
+        "Approx. Window Low",
         "Approx. MFE (price pts)",
         "Approx. MAE (price pts)",
         "Bar Evidence",
@@ -526,7 +527,7 @@ class TradeReviewExcursionEvidenceTests(SimpleTestCase):
     def test_columns_absent_without_internal_evidence(self):
         columns = build_trade_review_columns(self._base_frame())
         labels = [column["label"] for column in columns]
-        self.assertNotIn("Approx. Interval High", labels)
+        self.assertNotIn("Approx. Window High", labels)
         self.assertEqual(
             [column["label"] for column in columns if column["label"] in self.EVIDENCE_LABELS],
             [],
@@ -725,3 +726,197 @@ class TradeReviewExcursionEvidenceTests(SimpleTestCase):
             index for index, column in enumerate(blank_columns) if column["key"] == "mfe"
         ][0]
         self.assertEqual(blank_rows[0]["cells"][mfe_index]["value"], "")
+
+
+class TradeReviewMovementPresentationTests(SimpleTestCase):
+    def _rows(self, frame):
+        enriched = enrich_trade_review(frame)
+        columns = build_trade_review_columns(enriched)
+        return enriched, columns, build_trade_review_rows(enriched, columns)
+
+    def _movement_cell(self, frame):
+        _enriched, columns, rows = self._rows(frame)
+        index = [
+            position
+            for position, column in enumerate(columns)
+            if column["key"] == "movement"
+        ][0]
+        return rows[0]["cells"][index], _enriched
+
+    def test_positive_valid_broker_pips_is_signed(self):
+        cell, enriched = self._movement_cell(
+            pd.DataFrame(
+                {
+                    "Ticket": [1],
+                    "Type": ["buy"],
+                    "Price": [100],
+                    "Price.1": [142.3],
+                    "Pips": [42.3],
+                }
+            )
+        )
+        self.assertEqual(cell["value"], "+42.3 pips")
+        self.assertEqual(cell["note"], LABEL_PIPS)
+        self.assertIn("trade-review-move--pos", cell["css_class"])
+        self.assertEqual(enriched["_movement_value"].iloc[0], 42.3)
+
+    def test_negative_valid_broker_pips_is_signed(self):
+        cell, enriched = self._movement_cell(
+            pd.DataFrame(
+                {
+                    "Ticket": [1],
+                    "Type": ["sell"],
+                    "Price": [100],
+                    "Price.1": [118.7],
+                    "Pips": [-18.7],
+                }
+            )
+        )
+        self.assertEqual(cell["value"], "-18.7 pips")
+        self.assertEqual(cell["note"], LABEL_PIPS)
+        self.assertIn("trade-review-move--neg", cell["css_class"])
+        self.assertEqual(enriched["_movement_value"].iloc[0], -18.7)
+
+    def test_zero_valid_broker_pips_is_visible(self):
+        cell, enriched = self._movement_cell(
+            pd.DataFrame(
+                {
+                    "Ticket": [1],
+                    "Type": ["buy"],
+                    "Price": [100],
+                    "Price.1": [100],
+                    "Pips": [0.0],
+                }
+            )
+        )
+        self.assertEqual(cell["value"], "0 pips")
+        self.assertNotEqual(cell["value"], "")
+        self.assertEqual(enriched["_movement_value"].iloc[0], 0.0)
+
+    def test_disagreement_keeps_numeric_value_and_shows_mismatch(self):
+        cell, enriched = self._movement_cell(
+            pd.DataFrame(
+                {
+                    "Ticket": [1],
+                    "Type": ["buy"],
+                    "Price": [100],
+                    "Price.1": [110],
+                    "Pips": [10.2],
+                }
+            )
+        )
+        self.assertEqual(PIPS_MOVEMENT_TOLERANCE, 0.1)
+        self.assertTrue(bool(enriched["_movement_disagreement"].iloc[0]))
+        self.assertEqual(cell["value"], "+10.2 pips")
+        self.assertIn("10.2", cell["value"])
+        self.assertEqual(cell["flag"], "Mismatch")
+        self.assertEqual(
+            cell["title"],
+            "Broker Pips and calculated price move differ by more than 0.1.",
+        )
+        self.assertNotIn("should have", cell["value"].lower())
+        self.assertNotIn("Pips disagreement", cell["value"])
+
+    def test_price_move_fallback_is_not_labelled_pips(self):
+        cell, enriched = self._movement_cell(
+            pd.DataFrame(
+                {
+                    "Ticket": [1],
+                    "Type": ["buy"],
+                    "Price": [100],
+                    "Price.1": [112.4],
+                    "Pips": [None],
+                }
+            )
+        )
+        self.assertEqual(cell["value"], "+12.4 price pts")
+        self.assertEqual(cell["note"], LABEL_PRICE_MOVE)
+        self.assertNotIn("pips", cell["value"].lower())
+        self.assertEqual(enriched["_movement_source"].iloc[0], MOVEMENT_SOURCE_PRICE_MOVE)
+
+    def test_window_high_low_labels_use_existing_evidence_keys(self):
+        frame = pd.DataFrame({"Ticket": [1], "Profit": [1]})
+        attached = attach_excursion_evidence(
+            frame,
+            {
+                "1": {
+                    "ticket": "1",
+                    "status": "COMPUTED",
+                    "reason_code": "OK",
+                    "interval_high": 16172.8,
+                    "interval_low": 16135.2,
+                    "mfe": 0.0,
+                    "mae": 4.0,
+                    "high_from_boundary_bar": False,
+                    "low_from_boundary_bar": False,
+                    "entry_outside_first_bar_range": False,
+                    "exit_outside_last_bar_range": False,
+                    "realised_outside_interval": False,
+                }
+            },
+        )
+        columns = build_trade_review_columns(attached)
+        labels = {column["key"]: column["label"] for column in columns}
+        self.assertEqual(labels["interval_high"], "Approx. Window High")
+        self.assertEqual(labels["interval_low"], "Approx. Window Low")
+        self.assertEqual(labels["mfe"], "Approx. MFE (price pts)")
+        self.assertEqual(labels["mae"], "Approx. MAE (price pts)")
+        evidence_sort_keys = [
+            column["sort_key"]
+            for column in columns
+            if column["key"] in {"interval_high", "interval_low", "mfe", "mae"}
+        ]
+        self.assertEqual(
+            evidence_sort_keys,
+            ["interval_high", "interval_low", "mfe", "mae"],
+        )
+        rows = build_trade_review_rows(attached, columns)
+        high_index = [i for i, column in enumerate(columns) if column["key"] == "interval_high"][0]
+        low_index = [i for i, column in enumerate(columns) if column["key"] == "interval_low"][0]
+        mfe_index = [i for i, column in enumerate(columns) if column["key"] == "mfe"][0]
+        self.assertEqual(rows[0]["cells"][high_index]["value"], "16172.8")
+        self.assertEqual(rows[0]["cells"][low_index]["value"], "16135.2")
+        self.assertEqual(rows[0]["cells"][mfe_index]["value"], "0")
+        self.assertEqual(attached["_excursion_interval_high"].iloc[0], 16172.8)
+        self.assertEqual(format_movement_value(0.0, LABEL_PIPS), "0 pips")
+
+    def test_non_computed_window_and_mfe_are_blank(self):
+        frame = pd.DataFrame({"Ticket": [1], "Profit": [1]})
+        attached = attach_excursion_evidence(
+            frame,
+            {
+                "1": {
+                    "ticket": "1",
+                    "status": "NO_MARKET_DATA",
+                    "reason_code": "OUTSIDE_FILE_RANGE",
+                    "interval_high": None,
+                    "interval_low": None,
+                    "mfe": None,
+                    "mae": None,
+                }
+            },
+        )
+        columns = build_trade_review_columns(attached)
+        rows = build_trade_review_rows(attached, columns)
+        for key in ("interval_high", "interval_low", "mfe", "mae"):
+            index = [i for i, column in enumerate(columns) if column["key"] == key][0]
+            self.assertEqual(rows[0]["cells"][index]["value"], "")
+
+    def test_movement_sort_uses_raw_numeric_not_display(self):
+        frame = pd.DataFrame(
+            {
+                "Ticket": [2, 1],
+                "Type": ["buy", "sell"],
+                "Price": [100, 200],
+                "Price.1": [110, 181.3],
+                "Pips": [10.0, -18.7],
+            }
+        )
+        enriched = enrich_trade_review(frame)
+        sorted_df = sort_trade_review(enriched, "movement", "asc")
+        self.assertEqual(list(sorted_df["Ticket"]), [1, 2])
+        self.assertEqual(list(sorted_df["_movement_value"]), [-18.7, 10.0])
+        self.assertNotEqual(
+            sorted_df["_movement_value"].iloc[0],
+            format_movement_value(-18.7, LABEL_PIPS),
+        )

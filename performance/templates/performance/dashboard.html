@@ -44,10 +44,37 @@
   font-size: 0.75rem;
   color: #8896b3;
 }
+#trade-review .table-card,
+#trade-review .table-shell,
+#trade-review .table-responsive,
+#trade-review .trade-review-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+}
+#trade-review .trade-review-table {
+  min-width: 78rem;
+  width: max-content;
+}
+#trade-review .trade-review-cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  min-width: max-content;
+}
+#trade-review td:not(.trade-review-cell--numeric) .trade-review-cell-stack {
+  align-items: flex-start;
+}
 #trade-review .trade-review-flag {
-  display: block;
+  display: inline-block;
+  white-space: nowrap;
   font-size: 0.75rem;
   color: #f59e0b;
+}
+#trade-review .trade-review-status-cell,
+#trade-review .trade-review-status-cell .trade-review-cell-stack {
+  white-space: nowrap;
 }
 #broker-bar-evidence .broker-bar-help {
   color: var(--text-2);
@@ -751,7 +778,7 @@
     {% if trade_page and trade_page.object_list %}
 
     <div class="table-shell">
-      <div class="table-responsive">
+      <div class="table-responsive trade-review-scroll">
         <table class="table table-striped align-middle trade-review-table">
           <thead>
             <tr>
@@ -788,13 +815,18 @@
             <tr>
               {% for cell in row.cells %}
               <td class="{{ cell.css_class }}">
-                {{ cell.value }}
-                {% if cell.note %}
-                <span class="trade-review-move__meta">{{ cell.note }}</span>
-                {% endif %}
-                {% if cell.flag %}
-                <span class="trade-review-flag">{{ cell.flag }}</span>
-                {% endif %}
+                <div class="trade-review-cell-stack">
+                  <span class="trade-review-cell-value">{{ cell.value }}</span>
+                  {% if cell.note %}
+                  <span class="trade-review-move__meta">{{ cell.note }}</span>
+                  {% endif %}
+                  {% if cell.flag %}
+                  <span
+                    class="trade-review-flag"
+                    {% if cell.title %}title="{{ cell.title }}" aria-label="{{ cell.title }}"{% endif %}
+                  >{{ cell.flag }}</span>
+                  {% endif %}
+                </div>
               </td>
               {% endfor %}
             </tr>

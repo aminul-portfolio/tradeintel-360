@@ -116,13 +116,13 @@ EXCURSION_INTERNAL_COLUMNS = (
 EVIDENCE_DISPLAY_COLUMNS = (
     (
         "interval_high",
-        "Approx. Interval High",
+        "Approx. Window High",
         ("_excursion_interval_high",),
         "evidence_numeric",
     ),
     (
         "interval_low",
-        "Approx. Interval Low",
+        "Approx. Window Low",
         ("_excursion_interval_low",),
         "evidence_numeric",
     ),
@@ -599,13 +599,22 @@ def bar_evidence_notes(raw: Any) -> tuple[str, str]:
     return str(reason) if reason and not _is_missing(reason) else "", "; ".join(notes)
 
 
-def format_movement_value(value: Any) -> str:
+def format_movement_value(value: Any, label: Any = "") -> str:
     if _is_missing(value):
         return ""
     number = float(value)
+    if not math.isfinite(number):
+        return ""
     if number.is_integer():
-        return str(int(number))
-    return f"{number:.2f}"
+        magnitude = str(int(abs(number)))
+    else:
+        magnitude = f"{abs(number):.2f}".rstrip("0").rstrip(".")
+    unit = "pips" if label == LABEL_PIPS else "price pts"
+    if number == 0:
+        return f"0 {unit}"
+    if number > 0:
+        return f"+{magnitude} {unit}"
+    return f"-{magnitude} {unit}"
 
 
 def movement_css_class(value: Any) -> str:
@@ -632,9 +641,11 @@ def build_trade_review_rows(
         for column in columns:
             if column["kind"] == "movement":
                 value = raw.get("_movement_value")
+                label = raw.get("_movement_label") or ""
+                disagreement = bool(raw.get("_movement_disagreement"))
                 cells.append(
                     {
-                        "value": format_movement_value(value),
+                        "value": format_movement_value(value, label),
                         "css_class": " ".join(
                             part
                             for part in (
@@ -643,10 +654,11 @@ def build_trade_review_rows(
                             )
                             if part
                         ),
-                        "note": raw.get("_movement_label") or "",
-                        "flag": (
-                            "Pips disagreement"
-                            if bool(raw.get("_movement_disagreement"))
+                        "note": label,
+                        "flag": "Mismatch" if disagreement else "",
+                        "title": (
+                            "Broker Pips and calculated price move differ by more than 0.1."
+                            if disagreement
                             else ""
                         ),
                     }
@@ -660,6 +672,7 @@ def build_trade_review_rows(
                         "css_class": _cell_alignment_class(column["key"]),
                         "note": "",
                         "flag": "",
+                        "title": "",
                     }
                 )
                 continue
@@ -670,9 +683,10 @@ def build_trade_review_rows(
                         "value": format_bar_evidence_status(
                             raw.get(column["source_column"])
                         ),
-                        "css_class": "",
+                        "css_class": "trade-review-status-cell",
                         "note": note,
                         "flag": flag,
+                        "title": "",
                     }
                 )
                 continue
@@ -701,6 +715,7 @@ def build_trade_review_rows(
                     ),
                     "note": "",
                     "flag": "",
+                    "title": "",
                 }
             )
         rows.append({"cells": cells})

@@ -934,3 +934,37 @@ class RagCorpusTests(SimpleTestCase):
         with self.assertRaises(CorpusError) as raised:
             validate_evidence_corpus((broken, *documents[1:]), scope)
         self.assertEqual(raised.exception.reason, "INVALID_PROVENANCE")
+
+    def test_trade_provenance_carries_structured_symbol(self):
+        _scope, documents = self._build()
+        trades = {
+            item.source_record_key: item
+            for item in self._by_type(documents, DOCUMENT_TYPE_TRADE)
+        }
+        self.assertEqual(trades["1"].provenance["symbol"], "US100.cash")
+        self.assertEqual(trades["2"].provenance["symbol"], "EURUSD")
+        for trade in trades.values():
+            self.assertEqual(trade.content_sha256, content_sha256(trade.content))
+            self.assertEqual(
+                trade.content_sha256,
+                hashlib.sha256(trade.content.encode("utf-8")).hexdigest(),
+            )
+            self.assertNotIn("owner_id", trade.provenance)
+            self.assertNotIn("user_id", trade.provenance)
+            provenance_text = str(dict(trade.provenance)).lower()
+            for phrase in (
+                "secret note",
+                "keep out",
+                "breakout",
+                "do not index",
+                "alpha",
+                "news",
+            ):
+                self.assertNotIn(phrase, provenance_text)
+        for item in self._by_type(documents, DOCUMENT_TYPE_KPI):
+            self.assertNotIn("symbol", item.provenance)
+        dataset = self._by_type(documents, DOCUMENT_TYPE_DATASET)[0]
+        self.assertNotIn("symbol", dataset.provenance)
+        joined_provenance = " ".join(str(dict(item.provenance)) for item in documents)
+        self.assertNotIn("owner_id", joined_provenance)
+        self.assertNotIn("user_id", joined_provenance)

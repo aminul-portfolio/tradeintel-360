@@ -112,6 +112,21 @@ def _text(value: Any) -> str:
     return str(display)
 
 
+def _structured_symbol(row: Any, columns) -> str | None:
+    raw = _cell(row, columns, SYMBOL_COLUMNS)
+    if raw is None:
+        return None
+    try:
+        if pd.isna(raw):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(raw, bool):
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
 def _json_safe(value: Any) -> Any:
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -394,6 +409,7 @@ def _trade_documents(
             ),
             time_basis=bound_payload.get("time_basis") if bound_payload else None,
             bar_evidence_status=status,
+            symbol=_structured_symbol(row, columns),
         )
         documents.append(
             (

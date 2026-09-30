@@ -13,7 +13,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import get_template
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from xhtml2pdf import pisa
 
 from .analytics import apply_analysis
@@ -37,6 +37,15 @@ from .forms import FilterForm, MarketDataUploadForm, TradingFileForm
 from .ingestion import IngestionError, clean_ftmo_csv
 from .market_data import MarketDataValidationError, parse_market_data_bytes
 from .models import TradingFile
+from .rag.corpus import build_evidence_corpus
+from .rag.retrieval import RetrievalError, retrieve_evidence
+from .rag.schema import (
+    DOCUMENT_TYPE_DATASET,
+    DOCUMENT_TYPE_KPI,
+    DOCUMENT_TYPE_TRADE,
+    CorpusError,
+)
+from .rag.scope import RetrievalScopeError, resolve_retrieval_scope
 from .trade_review import (
     TRADE_PAGE_SIZE,
     attach_excursion_evidence,
@@ -1414,6 +1423,92 @@ def export_excel(request):
     )
     response["Content-Disposition"] = f'attachment; filename="tradeintel_report_{timestamp}.xlsx"'
     return response
+
+
+INSPECTOR_STATE_NO_ACTIVE_JOURNAL = "NO_ACTIVE_JOURNAL"
+INSPECTOR_DOCUMENT_TYPES = (
+    DOCUMENT_TYPE_TRADE,
+    DOCUMENT_TYPE_KPI,
+    DOCUMENT_TYPE_DATASET,
+)
+
+
+def _optional_inspector_value(raw):
+    if raw is None or not isinstance(raw, str):
+        return None
+    stripped = raw.strip()
+    return stripped or None
+
+
+def _parse_inspector_top_k(raw):
+    value = _optional_inspector_value(raw)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise RetrievalError("INVALID_TOP_K") from exc
+
+
+@login_required
+@require_GET
+def retrieval_inspector(request):
+    journal = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
+    has_active_journal = journal is not None and not journal.empty
+    form_q = request.GET.get("q", "")
+    form_ticket = request.GET.get("ticket", "")
+    form_symbol = request.GET.get("symbol", "")
+    form_document_type = request.GET.get("document_type", "")
+    form_top_k = request.GET.get("top_k", "")
+    run_requested = request.GET.get("run") == "1"
+    context = {
+        "inspector_state": None,
+        "retrieval_response": None,
+        "inspector_error_code": None,
+        "has_active_journal": has_active_journal,
+        "journal_row_count": int(len(journal)) if has_active_journal else 0,
+        "run_requested": run_requested,
+        "form_q": form_q if isinstance(form_q, str) else "",
+        "form_ticket": form_ticket if isinstance(form_ticket, str) else "",
+        "form_symbol": form_symbol if isinstance(form_symbol, str) else "",
+        "form_document_type": (
+            form_document_type if isinstance(form_document_type, str) else ""
+        ),
+        "form_top_k": form_top_k if isinstance(form_top_k, str) else "",
+        "document_type_choices": INSPECTOR_DOCUMENT_TYPES,
+    }
+    if not has_active_journal:
+        context["inspector_state"] = INSPECTOR_STATE_NO_ACTIVE_JOURNAL
+        return render(request, "performance/retrieval_inspector.html", context)
+    if not run_requested:
+        return render(request, "performance/retrieval_inspector.html", context)
+    try:
+        scope = resolve_retrieval_scope(request.user, journal)
+        documents = build_evidence_corpus(
+            scope,
+            journal,
+            kpi_mapping=compute_kpis(journal),
+            source_filename=request.session.get("last_uploaded_file"),
+            excursion_state=_bind_dashboard_excursion_state(request, journal),
+        )
+        response = retrieve_evidence(
+            documents,
+            scope,
+            query=context["form_q"],
+            ticket=_optional_inspector_value(context["form_ticket"]),
+            symbol=_optional_inspector_value(context["form_symbol"]),
+            document_type=_optional_inspector_value(context["form_document_type"]),
+            top_k=_parse_inspector_top_k(context["form_top_k"]),
+        )
+    except RetrievalError as exc:
+        context["inspector_error_code"] = exc.reason
+        return render(request, "performance/retrieval_inspector.html", context)
+    except (CorpusError, RetrievalScopeError):
+        context["inspector_state"] = "CORPUS_INVALID"
+        return render(request, "performance/retrieval_inspector.html", context)
+    context["retrieval_response"] = response
+    context["inspector_state"] = response.state
+    return render(request, "performance/retrieval_inspector.html", context)
 
 
 def project_one_plan(request):

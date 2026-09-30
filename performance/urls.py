@@ -15,6 +15,11 @@ urlpatterns = [
         name="upload_market_data",
     ),
     path("kpi/", views.kpi_report, name="kpi_report"),
+    path(
+        "retrieval-inspector/",
+        views.retrieval_inspector,
+        name="retrieval_inspector",
+    ),
     path("project-plan/", views.project_one_plan, name="project_one_plan"),
 
     # exports

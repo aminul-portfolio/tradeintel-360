@@ -18,7 +18,7 @@ from .excursion_state import EXCURSION_SESSION_KEY
 from .forms import DECLARED_EXPORT_CTRADER_CBOT, MarketDataUploadForm
 from .market_data import EXCURSION_CONTRACT_VERSION, MAX_MARKET_DATA_BYTES
 from .models import TradingFile
-from .trade_review import PIPS_MOVEMENT_TOLERANCE
+from .trade_review import BAR_EVIDENCE_UNBOUND_LABEL, PIPS_MOVEMENT_TOLERANCE
 
 _FIXED_XLSX_DATETIME = dt.datetime(2026, 6, 25, 10, 30, 0)
 _FIXED_ZIP_DATE_TIME = (2026, 6, 25, 10, 30, 0)
@@ -1857,6 +1857,94 @@ class DashboardAnalysisIntegrationTests(TestCase):
         self.assertIn("Pips", notes)
         self.assertIn("Price Move", notes)
         self.assertContains(response, "Realised movement")
+        values = [
+            row["cells"][movement_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertTrue(any(value.startswith("+") and "pips" in value for value in values))
+        self.assertTrue(any("price pts" in value for value in values))
+
+    def test_trade_review_disagreement_keeps_value_and_mismatch_badge(self):
+        frame = pd.DataFrame(
+            {
+                "Ticket": [1],
+                "Open Time": ["01 Sep 2026 10:00:00"],
+                "Symbol": ["XAUUSD"],
+                "Type": ["buy"],
+                "Price": [100],
+                "Price.1": [110],
+                "Profit": [10],
+                "Pips": [10.2],
+                "Notes": ["ok"],
+            }
+        )
+        session = self.client.session
+        session["cleaned_data"] = frame.to_json(orient="split", date_format="iso")
+        session["last_uploaded_file"] = r"trading_files\user_4\history.csv"
+        session.save()
+
+        response = self.client.get(self.dashboard_url)
+        movement_index = self._trade_column_index(response, "movement")
+        cell = response.context["trade_page"].object_list[0]["cells"][movement_index]
+        self.assertEqual(cell["value"], "+10.2 pips")
+        self.assertEqual(cell["note"], "Calculated move: +10 price pts")
+        self.assertEqual(cell["flag"], "Mismatch")
+        self.assertEqual(
+            cell["title"],
+            "Broker Pips and calculated price move differ by more than 0.1.",
+        )
+        review = self._trade_review_markup(response.content.decode())
+        self.assertIn("+10.2 pips", review)
+        self.assertIn("Calculated move: +10 price pts", review)
+        self.assertIn("Mismatch", review)
+        self.assertIn(
+            "Broker Pips and calculated price move differ by more than 0.1.",
+            review,
+        )
+        self.assertNotIn("should have held", review.lower())
+        self.assertNotIn("should have exited", review.lower())
+        self.assertNotIn("missed profit", review.lower())
+        self.assertNotIn("profit left on table", review.lower())
+        self.assertNotIn("optimal exit", review.lower())
+
+    def test_trade_review_zero_pips_mismatch_renders_calculated_move(self):
+        frame = pd.DataFrame(
+            {
+                "Ticket": [1],
+                "Open Time": ["01 Sep 2026 10:00:00"],
+                "Symbol": ["ABC"],
+                "Type": ["sell"],
+                "Price": [43054.86],
+                "Price.1": [43125.04],
+                "Profit": [-70],
+                "Pips": [0.0],
+                "Notes": ["ok"],
+            }
+        )
+        session = self.client.session
+        session["cleaned_data"] = frame.to_json(orient="split", date_format="iso")
+        session["last_uploaded_file"] = r"trading_files\user_4\history.csv"
+        session.save()
+
+        response = self.client.get(self.dashboard_url)
+        movement_index = self._trade_column_index(response, "movement")
+        cell = response.context["trade_page"].object_list[0]["cells"][movement_index]
+        self.assertEqual(PIPS_MOVEMENT_TOLERANCE, 0.1)
+        self.assertEqual(cell["value"], "0 pips")
+        self.assertEqual(cell["note"], "Calculated move: -70.18 price pts")
+        self.assertEqual(cell["flag"], "Mismatch")
+        self.assertEqual(
+            cell["title"],
+            "Broker Pips and calculated price move differ by more than 0.1.",
+        )
+        review = self._trade_review_markup(response.content.decode())
+        self.assertIn("0 pips", review)
+        self.assertIn("Calculated move: -70.18 price pts", review)
+        self.assertIn("Mismatch", review)
+        self.assertNotIn("should have held", review.lower())
+        self.assertNotIn("should have exited", review.lower())
+        self.assertNotIn("missed profit", review.lower())
+        self.assertNotIn("optimal exit", review.lower())
 
     def _trade_review_markup(self, content):
         match = re.search(
@@ -2333,6 +2421,15 @@ class BrokerBarUploadIntegrationTests(TestCase):
         self.assertIsNotNone(match)
         return match.group(1)
 
+    def _header_attr_map(self, review):
+        mapping = {}
+        for attrs, inner in re.findall(r"<th\b([^>]*)>(.*?)</th>", review, re.S):
+            text = re.sub(r"<[^>]+>", " ", inner)
+            text = " ".join(text.split())
+            text = re.sub(r"\s*[v^]\s*$", "", text).strip()
+            mapping[text] = attrs
+        return mapping
+
     def _context_payload(self, context):
         return {
             "source_filename": context.source_filename,
@@ -2633,8 +2730,43 @@ class BrokerBarUploadIntegrationTests(TestCase):
     def test_trade_review_visibility_blank_vs_zero(self):
         frame = self._store_journal(self._journal_frame())
         absent = self.client.get(self.dashboard_url)
+        absent_by_key = {
+            column["key"]: column
+            for column in absent.context["trade_review_columns"]
+        }
         absent_labels = [column["label"] for column in absent.context["trade_review_columns"]]
-        self.assertNotIn("Approx. Interval High", absent_labels)
+        self.assertEqual(
+            absent_labels[-5:],
+            [
+                "Approx. Window High",
+                "Approx. Window Low",
+                "Approx. MFE (price pts)",
+                "Approx. MAE (price pts)",
+                "Bar Evidence",
+            ],
+        )
+        for key in ("interval_high", "interval_low", "mfe", "mae"):
+            self.assertEqual(absent_by_key[key]["sort_key"], "")
+            self.assertFalse(absent_by_key[key]["evidence_bound"])
+        review = self._trade_review_markup(absent.content.decode())
+        self.assertIn("Approx. Window High", review)
+        self.assertIn("No M1 evidence", review)
+        self.assertNotIn("trade_sort=mfe", review)
+        mfe_index = self._column_index(absent, "mfe")
+        bar_index = self._column_index(absent, "bar_evidence")
+        unbound_mfe = [
+            row["cells"][mfe_index]["value"]
+            for row in absent.context["trade_page"].object_list
+        ]
+        unbound_bar = [
+            row["cells"][bar_index]["value"]
+            for row in absent.context["trade_page"].object_list
+        ]
+        self.assertEqual(unbound_mfe, ["", ""])
+        self.assertEqual(
+            unbound_bar,
+            [BAR_EVIDENCE_UNBOUND_LABEL, BAR_EVIDENCE_UNBOUND_LABEL],
+        )
 
         self._seed_bound_state(
             frame,
@@ -2656,20 +2788,37 @@ class BrokerBarUploadIntegrationTests(TestCase):
         self.assertEqual(
             labels[-5:],
             [
-                "Approx. Interval High",
-                "Approx. Interval Low",
+                "Approx. Window High",
+                "Approx. Window Low",
                 "Approx. MFE (price pts)",
                 "Approx. MAE (price pts)",
                 "Bar Evidence",
             ],
         )
+        present_by_key = {
+            column["key"]: column
+            for column in present.context["trade_review_columns"]
+        }
+        self.assertEqual(present_by_key["mfe"]["sort_key"], "mfe")
         mfe_index = self._column_index(present, "mfe")
+        bar_index = self._column_index(present, "bar_evidence")
         values = [
             row["cells"][mfe_index]["value"]
             for row in present.context["trade_page"].object_list
         ]
+        statuses = [
+            row["cells"][bar_index]["value"]
+            for row in present.context["trade_page"].object_list
+        ]
         self.assertIn("0", values)
         self.assertIn("", values)
+        self.assertIn("Computed", statuses)
+        self.assertIn("No market data", statuses)
+        self.assertNotIn(BAR_EVIDENCE_UNBOUND_LABEL, statuses)
+        bound_review = self._trade_review_markup(present.content.decode())
+        self.assertIn("Computed", bound_review)
+        self.assertIn("No market data", bound_review)
+        self.assertNotIn(BAR_EVIDENCE_UNBOUND_LABEL, bound_review)
 
     def test_evidence_sort_before_pagination_and_accessibility(self):
         rows = []
@@ -2923,3 +3072,187 @@ class BrokerBarUploadIntegrationTests(TestCase):
         session.save()
         counted = self.client.get(self.dashboard_url)
         self.assertEqual(counted.context["excursion_summary"]["matched_trade_count"], 4)
+
+    def test_trade_review_scroll_wrapper_and_window_labels(self):
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=0.0, interval_high=16172.8, interval_low=16135.2),
+                "2": self._evidence_item(
+                    2,
+                    status="NO_MARKET_DATA",
+                    reason_code="OUTSIDE_FILE_RANGE",
+                    interval_high=None,
+                    interval_low=None,
+                    mfe=None,
+                    mae=None,
+                ),
+            },
+        )
+        response = self.client.get(self.dashboard_url)
+        html = response.content.decode()
+        review = self._trade_review_markup(html)
+        self.assertIn("trade-review-scroll", review)
+        self.assertIn("overflow-x: auto", html)
+        self.assertIn("min-width: 78rem", html)
+        self.assertIn("Approx. Window High", review)
+        self.assertIn("Approx. Window Low", review)
+        self.assertIn("Approx. MFE (price pts)", review)
+        self.assertIn("Approx. MAE (price pts)", review)
+        self.assertContains(response, self.CROSS_SYMBOL_WARNING)
+        for claim in self.FORBIDDEN_CLAIMS:
+            self.assertNotIn(claim, html)
+        labels = [column["label"] for column in response.context["trade_review_columns"]]
+        self.assertNotIn("Approx. Interval High", labels)
+        high_index = self._column_index(response, "interval_high")
+        mfe_index = self._column_index(response, "mfe")
+        values_high = [
+            row["cells"][high_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        values_mfe = [
+            row["cells"][mfe_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertIn("16172.8", values_high)
+        self.assertIn("", values_high)
+        self.assertIn("0", values_mfe)
+        self.assertIn("", values_mfe)
+
+    def test_trade_review_header_alignment_classes_render(self):
+        frame = self._store_journal(self._journal_frame())
+        absent = self.client.get(self.dashboard_url)
+        absent_by_key = {
+            column["key"]: column
+            for column in absent.context["trade_review_columns"]
+        }
+        self.assertIn("interval_high", absent_by_key)
+        self.assertEqual(absent_by_key["interval_high"]["sort_key"], "")
+        self.assertFalse(absent_by_key["interval_high"]["evidence_bound"])
+        self.assertEqual(
+            absent_by_key["interval_high"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        self.assertNotEqual(
+            absent_by_key["bar_evidence"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        self.assertEqual(
+            absent_by_key["entry"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        self.assertEqual(
+            absent_by_key["exit"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        self.assertNotEqual(
+            absent_by_key["symbol"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        absent_review = self._trade_review_markup(absent.content.decode())
+        absent_headers = self._header_attr_map(absent_review)
+        self.assertIn(
+            "trade-review-cell--numeric",
+            absent_headers["Entry"],
+        )
+        self.assertIn(
+            "trade-review-cell--numeric",
+            absent_headers["Exit"],
+        )
+        self.assertNotIn(
+            "trade-review-cell--numeric",
+            absent_headers["Symbol"],
+        )
+        self.assertIn(
+            "trade-review-cell--numeric",
+            absent_headers["Approx. Window High"],
+        )
+        self.assertNotIn(
+            "trade-review-cell--numeric",
+            absent_headers["Bar Evidence"],
+        )
+        self.assertIn("aria-sort", absent_review)
+        self.assertIn(BAR_EVIDENCE_UNBOUND_LABEL, absent_review)
+
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, interval_high=16172.8, interval_low=16135.2),
+                "2": self._evidence_item(2, interval_high=1.25, interval_low=1.05),
+            },
+        )
+        present = self.client.get(
+            self.dashboard_url,
+            {"trade_sort": "profit", "trade_dir": "asc"},
+        )
+        present_by_key = {
+            column["key"]: column
+            for column in present.context["trade_review_columns"]
+        }
+        for key in ("entry", "exit", "interval_high", "interval_low", "mfe", "mae"):
+            self.assertEqual(
+                present_by_key[key]["header_css_class"],
+                "trade-review-cell--numeric",
+            )
+        self.assertNotEqual(
+            present_by_key["bar_evidence"]["header_css_class"],
+            "trade-review-cell--numeric",
+        )
+        html = present.content.decode()
+        review = self._trade_review_markup(html)
+        headers = self._header_attr_map(review)
+        self.assertIn("trade-review-cell--numeric", headers["Entry"])
+        self.assertIn("trade-review-cell--numeric", headers["Exit"])
+        self.assertIn("trade-review-cell--numeric", headers["Approx. Window High"])
+        self.assertNotIn("trade-review-cell--numeric", headers["Symbol"])
+        self.assertNotIn("trade-review-cell--numeric", headers["Bar Evidence"])
+        self.assertIn('aria-sort="ascending"', review)
+        self.assertIn('aria-label="Sort by Profit, descending"', review)
+        styles = "".join(re.findall(r"<style>(.*?)</style>", html, re.S))
+        self.assertIn("#trade-review th.trade-review-cell--numeric", styles)
+        self.assertIn("trade-review-scroll", review)
+        self.assertNotIn("nth-child", styles)
+
+    def test_trade_review_unbound_evidence_columns_render(self):
+        self._store_journal(self._journal_frame())
+        response = self.client.get(self.dashboard_url)
+        review = self._trade_review_markup(response.content.decode())
+        for label in (
+            "Approx. Window High",
+            "Approx. Window Low",
+            "Approx. MFE (price pts)",
+            "Approx. MAE (price pts)",
+            "Bar Evidence",
+        ):
+            self.assertIn(label, review)
+        self.assertIn(BAR_EVIDENCE_UNBOUND_LABEL, review)
+        self.assertNotIn("Computed", review)
+        sorts = self._sort_href_map(review)
+        for key in ("interval_high", "interval_low", "mfe", "mae"):
+            self.assertNotIn(key, sorts)
+        self.assertIn("profit", sorts)
+        self.assertIn("aria-sort", review)
+
+    def test_trade_review_renders_clean_evidence_decimals(self):
+        noisy = 5.399999999999782
+        frame = self._store_journal(self._journal_frame())
+        self._seed_bound_state(
+            frame,
+            {
+                "1": self._evidence_item(1, mfe=noisy),
+                "2": self._evidence_item(2, mfe=0.3),
+            },
+        )
+        response = self.client.get(self.dashboard_url)
+        mfe_index = self._column_index(response, "mfe")
+        values = [
+            row["cells"][mfe_index]["value"]
+            for row in response.context["trade_page"].object_list
+        ]
+        self.assertIn("5.4", values)
+        self.assertIn("0.3", values)
+        self.assertNotIn(str(noisy), values)
+        review = self._trade_review_markup(response.content.decode())
+        self.assertIn("5.4", review)
+        self.assertNotIn("5.399999999999782", review)

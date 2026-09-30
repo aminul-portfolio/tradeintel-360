@@ -155,6 +155,7 @@ BAR_EVIDENCE_LABELS = {
     "INCOMPLETE_COVERAGE": "Incomplete coverage",
     "INVARIANT_VIOLATION": "Evidence unavailable",
 }
+BAR_EVIDENCE_UNBOUND_LABEL = "No M1 evidence"
 
 
 def _first_present(columns, candidates):
@@ -243,6 +244,7 @@ def resolve_realised_movement(
                 else MOVEMENT_STATUS_OK
             ),
             "disagreement": disagreement,
+            "calculated": calculated,
         }
     if calculated is not None:
         return {
@@ -251,6 +253,7 @@ def resolve_realised_movement(
             "source": MOVEMENT_SOURCE_PRICE_MOVE,
             "status": MOVEMENT_STATUS_FALLBACK,
             "disagreement": False,
+            "calculated": calculated,
         }
     return {
         "value": None,
@@ -258,6 +261,7 @@ def resolve_realised_movement(
         "source": MOVEMENT_SOURCE_UNAVAILABLE,
         "status": MOVEMENT_STATUS_UNAVAILABLE,
         "disagreement": False,
+        "calculated": None,
     }
 
 
@@ -273,6 +277,7 @@ def enrich_trade_review(dataframe: pd.DataFrame) -> pd.DataFrame:
     sources = []
     statuses = []
     flags = []
+    calculated_values = []
 
     for _, row in frame.iterrows():
         result = resolve_realised_movement(
@@ -286,12 +291,14 @@ def enrich_trade_review(dataframe: pd.DataFrame) -> pd.DataFrame:
         sources.append(result["source"])
         statuses.append(result["status"])
         flags.append(result["disagreement"])
+        calculated_values.append(result["calculated"])
 
     frame["_movement_value"] = values
     frame["_movement_label"] = labels
     frame["_movement_source"] = sources
     frame["_movement_status"] = statuses
     frame["_movement_disagreement"] = flags
+    frame["_movement_calculated"] = calculated_values
     return frame
 
 
@@ -428,6 +435,34 @@ def attach_excursion_evidence(
     return frame
 
 
+def _trade_review_column(
+    key: str,
+    label: str,
+    sort_key: str,
+    source_column: str,
+    kind: str,
+    evidence_bound: bool | None = None,
+) -> dict[str, Any]:
+    column = {
+        "key": key,
+        "label": label,
+        "sort_key": sort_key,
+        "source_column": source_column,
+        "kind": kind,
+        "header_css_class": _cell_alignment_class(key),
+    }
+    if evidence_bound is not None:
+        column["evidence_bound"] = evidence_bound
+    return column
+
+
+def _excursion_evidence_bound(available: set[str]) -> bool:
+    return all(
+        name in available
+        for name in ("_excursion_status", "_excursion_mfe")
+    )
+
+
 def build_trade_review_columns(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
     columns = []
     available = set(dataframe.columns) if dataframe is not None else set()
@@ -436,37 +471,37 @@ def build_trade_review_columns(dataframe: pd.DataFrame) -> list[dict[str, Any]]:
         if source is None:
             continue
         columns.append(
-            {
-                "key": key,
-                "label": label,
-                "sort_key": key if key in SORT_WHITELIST else "",
-                "source_column": source,
-                "kind": "data",
-            }
+            _trade_review_column(
+                key,
+                label,
+                key if key in SORT_WHITELIST else "",
+                source,
+                "data",
+            )
         )
     columns.append(
-        {
-            "key": "movement",
-            "label": "Realised movement",
-            "sort_key": "movement",
-            "source_column": "_movement_value",
-            "kind": "movement",
-        }
+        _trade_review_column(
+            "movement",
+            "Realised movement",
+            "movement",
+            "_movement_value",
+            "movement",
+        )
     )
-    if all(name in available for name in ("_excursion_status", "_excursion_mfe")):
-        for key, label, candidates, kind in EVIDENCE_DISPLAY_COLUMNS:
-            source = _first_present(available, candidates)
-            if source is None:
-                continue
-            columns.append(
-                {
-                    "key": key,
-                    "label": label,
-                    "sort_key": key if key in SORT_WHITELIST else "",
-                    "source_column": source,
-                    "kind": kind,
-                }
+    evidence_bound = _excursion_evidence_bound(available)
+    for key, label, candidates, kind in EVIDENCE_DISPLAY_COLUMNS:
+        source = _first_present(available, candidates) or candidates[0]
+        sort_key = key if evidence_bound and key in SORT_WHITELIST else ""
+        columns.append(
+            _trade_review_column(
+                key,
+                label,
+                sort_key,
+                source,
+                kind,
+                evidence_bound=evidence_bound,
             )
+        )
     return columns
 
 
@@ -524,7 +559,6 @@ def format_volume_value(value: Any) -> str:
 
 def _cell_alignment_class(column_key: str) -> str:
     if column_key in {
-        "ticket",
         "volume",
         "profit",
         "entry",
@@ -556,18 +590,26 @@ def format_evidence_value(value: Any) -> str:
         return ""
     if number == 0:
         return "0"
-    try:
-        normalised = Decimal(format(number, ".15g"))
-    except (InvalidOperation, ValueError):
-        return ""
-    if normalised == 0:
+    places = None
+    for candidate_places in range(0, 13):
+        candidate = round(number, candidate_places)
+        if candidate == 0 and number != 0:
+            continue
+        if math.isclose(
+            number,
+            candidate,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            places = candidate_places
+            break
+    if places is None:
         try:
-            normalised = Decimal(format(number, ".17g"))
+            text = format(Decimal(format(number, ".15g")), "f")
         except (InvalidOperation, ValueError):
             return ""
-        if normalised == 0:
-            return "0"
-    text = format(normalised, "f")
+    else:
+        text = f"{round(number, places):.{places}f}"
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     if text in {"", "-", "-0"}:
@@ -599,22 +641,39 @@ def bar_evidence_notes(raw: Any) -> tuple[str, str]:
     return str(reason) if reason and not _is_missing(reason) else "", "; ".join(notes)
 
 
-def format_movement_value(value: Any, label: Any = "") -> str:
+def format_signed_number(value: Any) -> str:
     if _is_missing(value):
         return ""
-    number = float(value)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
     if not math.isfinite(number):
         return ""
     if number.is_integer():
         magnitude = str(int(abs(number)))
     else:
         magnitude = f"{abs(number):.2f}".rstrip("0").rstrip(".")
-    unit = "pips" if label == LABEL_PIPS else "price pts"
     if number == 0:
-        return f"0 {unit}"
+        return "0"
     if number > 0:
-        return f"+{magnitude} {unit}"
-    return f"-{magnitude} {unit}"
+        return f"+{magnitude}"
+    return f"-{magnitude}"
+
+
+def format_movement_value(value: Any, label: Any = "") -> str:
+    signed = format_signed_number(value)
+    if not signed:
+        return ""
+    unit = "pips" if label == LABEL_PIPS else "price pts"
+    return f"{signed} {unit}"
+
+
+def format_calculated_move_note(value: Any) -> str:
+    signed = format_signed_number(value)
+    if not signed:
+        return ""
+    return f"Calculated move: {signed} price pts"
 
 
 def movement_css_class(value: Any) -> str:
@@ -643,6 +702,12 @@ def build_trade_review_rows(
                 value = raw.get("_movement_value")
                 label = raw.get("_movement_label") or ""
                 disagreement = bool(raw.get("_movement_disagreement"))
+                calculated = raw.get("_movement_calculated")
+                note = str(label)
+                if disagreement:
+                    secondary = format_calculated_move_note(calculated)
+                    if secondary:
+                        note = secondary
                 cells.append(
                     {
                         "value": format_movement_value(value, label),
@@ -654,7 +719,7 @@ def build_trade_review_rows(
                             )
                             if part
                         ),
-                        "note": label,
+                        "note": note,
                         "flag": "Mismatch" if disagreement else "",
                         "title": (
                             "Broker Pips and calculated price move differ by more than 0.1."
@@ -665,10 +730,15 @@ def build_trade_review_rows(
                 )
                 continue
             if column["kind"] == "evidence_numeric":
-                value = raw.get(column["source_column"])
+                if column.get("evidence_bound"):
+                    display = format_evidence_value(
+                        raw.get(column["source_column"])
+                    )
+                else:
+                    display = ""
                 cells.append(
                     {
-                        "value": format_evidence_value(value),
+                        "value": display,
                         "css_class": _cell_alignment_class(column["key"]),
                         "note": "",
                         "flag": "",
@@ -677,6 +747,17 @@ def build_trade_review_rows(
                 )
                 continue
             if column["kind"] == "evidence_status":
+                if not column.get("evidence_bound"):
+                    cells.append(
+                        {
+                            "value": BAR_EVIDENCE_UNBOUND_LABEL,
+                            "css_class": "trade-review-status-cell",
+                            "note": "",
+                            "flag": "",
+                            "title": "",
+                        }
+                    )
+                    continue
                 note, flag = bar_evidence_notes(raw)
                 cells.append(
                     {

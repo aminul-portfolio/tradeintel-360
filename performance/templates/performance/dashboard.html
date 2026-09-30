@@ -24,7 +24,8 @@
   color: var(--text-1);
   font-weight: 600;
 }
-#trade-review .trade-review-cell--numeric {
+#trade-review .trade-review-cell--numeric,
+#trade-review th.trade-review-cell--numeric {
   text-align: right;
   white-space: nowrap;
 }
@@ -784,6 +785,7 @@
             <tr>
               {% for column in trade_review_columns %}
               <th
+                class="{{ column.header_css_class }}"
                 {% if column.is_active and trade_dir == "desc" %}
                   aria-sort="descending"
                 {% elif column.is_active %}

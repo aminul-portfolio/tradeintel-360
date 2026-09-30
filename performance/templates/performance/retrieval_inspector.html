@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+
+{% block title %}Retrieval Inspector | TradeIntel 360{% endblock %}
+
+{% block content %}
+
+{% include "partials/page_header.html" with eyebrow="Diagnostic surface" eyebrow_icon="bi-search" title="Retrieval Inspector" copy="Private diagnostic view of deterministic evidence retrieval." %}
+
+<div class="kpi-report-layout">
+
+  <aside class="kpi-report-sidebar">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Inspector context</h2>
+      <p class="section-subcopy mb-4">
+        This page inspects retrieved evidence from the currently active
+        server-side journal. It is not an answer generator, chatbot,
+        recommendation engine, or trading signal.
+      </p>
+
+      <div class="kpi-report-meta">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Active journal</div>
+          <div class="kpi-report-meta__value">
+            {% if has_active_journal %}
+              Loaded ({{ journal_row_count }} rows)
+            {% else %}
+              Not loaded
+            {% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Inspector state</div>
+          <div class="kpi-report-meta__value">
+            {% if inspector_error_code %}
+              {{ inspector_error_code }}
+            {% elif inspector_state %}
+              {{ inspector_state }}
+            {% else %}
+              Ready
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-report-divider"></div>
+      <div class="kpi-report-actions">
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+          <i class="bi bi-speedometer2"></i>Back to Dashboard
+        </a>
+        <a href="{% url 'performance:upload_file' %}" class="btn btn-primary">
+          <i class="bi bi-upload"></i>Upload Journal
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="kpi-report-main">
+    <div class="surface-card section-card">
+      <div class="kpi-report-card-header">
+        <div>
+          <h2 class="section-heading mb-1">Deterministic retrieval</h2>
+          <p class="section-subcopy mb-0">
+            Run a manual GET request against the full active journal.
+            Dashboard filters are not applied.
+          </p>
+        </div>
+        <span class="signal-badge">
+          <i class="bi bi-shield-check"></i>Evidence inspection
+        </span>
+      </div>
+
+      <form method="get" class="app-filter-bar mb-4" action="{% url 'performance:retrieval_inspector' %}">
+        <input type="hidden" name="run" value="1">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label class="form-label" for="inspector-q">Query</label>
+            <input
+              id="inspector-q"
+              type="text"
+              name="q"
+              value="{{ form_q }}"
+              class="form-control"
+              placeholder="Lexical query"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="inspector-ticket">Ticket</label>
+            <input
+              id="inspector-ticket"
+              type="text"
+              name="ticket"
+              value="{{ form_ticket }}"
+              class="form-control"
+              placeholder="Explicit ticket"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="inspector-symbol">Symbol</label>
+            <input
+              id="inspector-symbol"
+              type="text"
+              name="symbol"
+              value="{{ form_symbol }}"
+              class="form-control"
+              placeholder="Structured symbol"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="inspector-document-type">Document type</label>
+            <select id="inspector-document-type" name="document_type" class="form-control">
+              <option value="">All types</option>
+              {% for item in document_type_choices %}
+              <option value="{{ item }}"{% if form_document_type == item %} selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="inspector-top-k">Top K</label>
+            <input
+              id="inspector-top-k"
+              type="text"
+              name="top_k"
+              value="{{ form_top_k }}"
+              class="form-control"
+              placeholder="Optional"
+            >
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-search"></i>
+            Run Retrieval
+          </button>
+        </div>
+      </form>
+
+      <p class="section-subcopy mb-4">
+        Lexical similarity is a deterministic retrieval ranking value.
+        It is not a confidence or probability score.
+      </p>
+
+      {% if inspector_state == "NO_ACTIVE_JOURNAL" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">NO_ACTIVE_JOURNAL</h2>
+        <p class="section-subcopy mb-0">
+          Load or upload an active journal before retrieval can run.
+        </p>
+      </div>
+      {% elif inspector_error_code %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">Request not executed</h2>
+        <p class="section-subcopy mb-0">
+          The Inspector could not call retrieval for this request
+          ({{ inspector_error_code }}). No retrieval response was manufactured.
+        </p>
+      </div>
+      {% elif inspector_state == "CORPUS_INVALID" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">CORPUS_INVALID</h2>
+        <p class="section-subcopy mb-0">
+          Evidence retrieval closed without results because the active
+          journal corpus is not valid for inspection.
+        </p>
+        {% if retrieval_response %}
+        <div class="kpi-report-meta mt-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">top_k</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.top_k }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Returned results</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% elif inspector_state == "EMPTY_QUERY" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">EMPTY_QUERY</h2>
+        <p class="section-subcopy mb-0">
+          No usable lexical query or explicit ticket was provided.
+        </p>
+        {% if retrieval_response %}
+        <div class="kpi-report-meta mt-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">top_k</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.top_k }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Returned results</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% elif inspector_state == "NO_RELEVANT_EVIDENCE" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">NO_RELEVANT_EVIDENCE</h2>
+        <p class="section-subcopy mb-0">
+          No evidence matched the deterministic retrieval request.
+        </p>
+        {% if retrieval_response %}
+        <div class="kpi-report-meta mt-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">top_k</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.top_k }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Returned results</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% elif inspector_state == "OK" and retrieval_response %}
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Retrieved evidence</h2>
+        <p class="section-subcopy mb-3">
+          Deterministic retrieval response for the current request.
+        </p>
+        <div class="kpi-report-meta">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">state</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.state }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">top_k</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.top_k }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Returned results</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+        </div>
+      </div>
+
+      {% for item in retrieval_response.results %}
+      <div class="surface-card section-card mb-3">
+        <h2 class="section-heading mb-2">Rank {{ item.rank }}</h2>
+        <div class="kpi-report-meta mb-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Document type</div>
+            <div class="kpi-report-meta__value">{{ item.document_type }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Source record key</div>
+            <div class="kpi-report-meta__value">{{ item.source_record_key }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Evidence status</div>
+            <div class="kpi-report-meta__value">{{ item.evidence_status }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Retrieval method</div>
+            <div class="kpi-report-meta__value">{{ item.retrieval_method }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Lexical similarity score</div>
+            <div class="kpi-report-meta__value">
+              {% if item.retrieval_method == "EXACT_TICKET" %}
+                Not applicable - exact ticket match
+              {% elif item.score is not None %}
+                {{ item.score }}
+              {% else %}
+                Not available
+              {% endif %}
+            </div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Document ID</div>
+            <div class="kpi-report-meta__value">{{ item.document_id }}</div>
+          </div>
+        </div>
+        <h2 class="section-heading mb-1">Evidence content</h2>
+        <p class="section-subcopy mb-0">{{ item.content|linebreaksbr }}</p>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

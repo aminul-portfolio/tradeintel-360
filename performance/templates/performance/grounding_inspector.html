@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+
+{% block title %}Grounding Inspector | TradeIntel 360{% endblock %}
+
+{% block content %}
+
+{% include "partials/page_header.html" with eyebrow="Diagnostic surface" eyebrow_icon="bi-shield-check" title="Grounding Inspector" copy="Private diagnostic view of deterministic evidence grounding. Human review is required." %}
+
+<div class="kpi-report-layout">
+
+  <aside class="kpi-report-sidebar">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Inspector context</h2>
+      <p class="section-subcopy mb-4">
+        This page inspects a manually supplied test candidate against
+        server-rebuilt evidence. It is not an answer generator, chatbot,
+        recommendation engine, or trading signal.
+      </p>
+      <p class="section-subcopy mb-2">Provider: Not connected</p>
+      <p class="section-subcopy mb-4">No LLM is called in this version.</p>
+
+      <div class="kpi-report-meta">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Active journal</div>
+          <div class="kpi-report-meta__value">
+            {% if has_active_journal %}
+              Loaded ({{ journal_row_count }} rows)
+            {% else %}
+              Not loaded
+            {% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Inspector state</div>
+          <div class="kpi-report-meta__value">
+            {% if inspector_error_code %}
+              {{ inspector_error_code }}
+            {% elif inspector_state %}
+              {{ inspector_state }}
+            {% else %}
+              Ready
+            {% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Prompt template version</div>
+          <div class="kpi-report-meta__value">{{ grounding_prompt_template_version }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Request schema version</div>
+          <div class="kpi-report-meta__value">{{ grounding_request_schema_version }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Response schema version</div>
+          <div class="kpi-report-meta__value">{{ grounding_response_schema_version }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Task type</div>
+          <div class="kpi-report-meta__value">{{ grounding_task_type }}</div>
+        </div>
+      </div>
+
+      <div class="kpi-report-divider"></div>
+      <div class="kpi-report-actions">
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+          <i class="bi bi-speedometer2"></i>Back to Dashboard
+        </a>
+        <a href="{% url 'performance:retrieval_inspector' %}" class="btn btn-soft">
+          <i class="bi bi-search"></i>Retrieval Inspector
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="kpi-report-main">
+    <div class="surface-card section-card">
+      <div class="kpi-report-card-header">
+        <div>
+          <h2 class="section-heading mb-1">Deterministic grounding</h2>
+          <p class="section-subcopy mb-0">
+            Retrieve active-journal evidence, inspect the server-built
+            packet, then paste a candidate JSON object. Human review is
+            required. Dashboard filters are not applied.
+          </p>
+        </div>
+        <span class="signal-badge">
+          <i class="bi bi-shield-check"></i>Evidence inspection
+        </span>
+      </div>
+
+      <form method="get" class="app-filter-bar mb-4" action="{% url 'performance:grounding_inspector' %}">
+        <input type="hidden" name="run" value="1">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label class="form-label" for="grounding-q">Query</label>
+            <input
+              id="grounding-q"
+              type="text"
+              name="q"
+              value="{{ form_q }}"
+              class="form-control"
+              placeholder="Retrieval question"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="grounding-ticket">Ticket</label>
+            <input
+              id="grounding-ticket"
+              type="text"
+              name="ticket"
+              value="{{ form_ticket }}"
+              class="form-control"
+              placeholder="Explicit ticket"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="grounding-symbol">Symbol</label>
+            <input
+              id="grounding-symbol"
+              type="text"
+              name="symbol"
+              value="{{ form_symbol }}"
+              class="form-control"
+              placeholder="Structured symbol"
+            >
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="grounding-document-type">Document type</label>
+            <select id="grounding-document-type" name="document_type" class="form-control">
+              <option value="">All types</option>
+              {% for item in document_type_choices %}
+              <option value="{{ item }}"{% if form_document_type == item %} selected{% endif %}>{{ item }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="grounding-top-k">Top K</label>
+            <input
+              id="grounding-top-k"
+              type="text"
+              name="top_k"
+              value="{{ form_top_k }}"
+              class="form-control"
+              placeholder="Optional"
+            >
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">
+            <i class="bi bi-search"></i>
+            Retrieve evidence
+          </button>
+        </div>
+      </form>
+
+      {% if inspector_state == "NO_ACTIVE_JOURNAL" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">NO_ACTIVE_JOURNAL</h2>
+        <p class="section-subcopy mb-0">
+          Load or upload an active journal before grounding can run.
+        </p>
+      </div>
+      {% elif inspector_error_code %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">Request not executed</h2>
+        <p class="section-subcopy mb-0">
+          The Inspector could not call retrieval for this request
+          ({{ inspector_error_code }}). No grounding request was manufactured.
+        </p>
+      </div>
+      {% elif inspector_state and inspector_state != "OK" %}
+      <div class="surface-card section-card">
+        <h2 class="section-heading mb-1">{{ inspector_state }}</h2>
+        <p class="section-subcopy mb-0">
+          Retrieval did not return usable evidence. No grounded-ai-request
+          was built.
+        </p>
+        {% if retrieval_response %}
+        <div class="kpi-report-meta mt-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">state</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.state }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Returned results</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% elif inspector_state == "OK" and retrieval_response %}
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Retrieved evidence</h2>
+        <div class="kpi-report-meta">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">state</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.state }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">corpus_size</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.corpus_size }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">candidate_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.candidate_count }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">returned_count</div>
+            <div class="kpi-report-meta__value">{{ retrieval_response.results|length }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">retrieval method</div>
+            <div class="kpi-report-meta__value">
+              {{ retrieval_response.results.0.retrieval_method }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if grounding_error_code %}
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Grounding packet not built</h2>
+        <p class="section-subcopy mb-0">{{ grounding_error_code }}</p>
+      </div>
+      {% endif %}
+
+      {% if grounding_request %}
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Model-facing packet</h2>
+        <p class="section-subcopy mb-3">
+          Built server-side from the current retrieval. Request SHA remains
+          server-owned.
+        </p>
+        <div class="kpi-report-meta mb-3">
+          {% if request_id_short %}
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Request id (diagnostic)</div>
+            <div class="kpi-report-meta__value">{{ request_id_short }}</div>
+          </div>
+          {% endif %}
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Required limitation codes</div>
+            <div class="kpi-report-meta__value">
+              {% for code in grounding_request.required_limitation_codes %}
+                {{ code.value }}{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                None
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        {% for item in grounding_request.evidence %}
+        <div class="kpi-report-meta mb-3">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Alias</div>
+            <div class="kpi-report-meta__value">{{ item.alias }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Document type</div>
+            <div class="kpi-report-meta__value">{{ item.document_type }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Evidence status</div>
+            <div class="kpi-report-meta__value">{{ item.evidence_status }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">Claimable field keys</div>
+            <div class="kpi-report-meta__value">
+              {% for key in item.claimable_field_keys %}{{ key }}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Rendered prompt</h2>
+        <p class="section-subcopy mb-2">{{ grounding_prompt_template_version }}</p>
+        <pre class="section-subcopy mb-0">{{ grounding_prompt }}</pre>
+      </div>
+
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Manually supplied test candidate - not AI-generated</h2>
+        <p class="section-subcopy mb-3">
+          Provider: Not connected. No LLM is called in this version.
+          Paste grounded-ai-response-v1 JSON only.
+        </p>
+        <form method="post" action="{% url 'performance:grounding_inspector' %}">
+          {% csrf_token %}
+          <input type="hidden" name="q" value="{{ form_q }}">
+          <input type="hidden" name="ticket" value="{{ form_ticket }}">
+          <input type="hidden" name="symbol" value="{{ form_symbol }}">
+          <input type="hidden" name="document_type" value="{{ form_document_type }}">
+          <input type="hidden" name="top_k" value="{{ form_top_k }}">
+          <label class="form-label" for="grounding-candidate">Candidate JSON</label>
+          <textarea
+            id="grounding-candidate"
+            name="candidate_json"
+            class="form-control mb-3"
+            rows="10"
+            placeholder="Paste grounded-ai-response-v1 JSON"
+          >{{ form_candidate_json }}</textarea>
+          <button class="btn btn-primary" type="submit">
+            Validate candidate
+          </button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if validation_result %}
+      <div class="surface-card section-card mb-4">
+        <h2 class="section-heading mb-1">Deterministic validation</h2>
+        <p class="section-subcopy mb-3">Human review is required.</p>
+        <div class="kpi-report-meta">
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">status</div>
+            <div class="kpi-report-meta__value">{{ validation_result.status.value }}</div>
+          </div>
+          <div class="kpi-report-meta__item">
+            <div class="app-kpi-label">review_required</div>
+            <div class="kpi-report-meta__value">{{ validation_result.review_required }}</div>
+          </div>
+        </div>
+        {% if validation_result.status.value == "PASSED_DETERMINISTIC_CHECKS" %}
+        <p class="section-subcopy mt-3 mb-0">{{ pass_wording }}</p>
+        {% else %}
+        <p class="section-subcopy mt-3 mb-2">REJECTED</p>
+        <p class="section-subcopy mb-0">
+          {% for code in validation_result.rejection_codes %}
+            {{ code.value }}{% if not forloop.last %}, {% endif %}
+          {% empty %}
+            None
+          {% endfor %}
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

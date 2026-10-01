@@ -20,6 +20,11 @@ urlpatterns = [
         views.retrieval_inspector,
         name="retrieval_inspector",
     ),
+    path(
+        "grounding-inspector/",
+        views.grounding_inspector,
+        name="grounding_inspector",
+    ),
     path("project-plan/", views.project_one_plan, name="project_one_plan"),
 
     # exports

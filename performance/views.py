@@ -13,9 +13,19 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import get_template
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from xhtml2pdf import pisa
 
+from .ai_grounding import (
+    GROUNDING_REQUEST_SCHEMA_VERSION,
+    GROUNDING_RESPONSE_SCHEMA_VERSION,
+    PROMPT_TEMPLATE_VERSION,
+    TASK_TYPE,
+    GroundingError,
+    build_evidence_packet,
+    render_evidence_summary_prompt,
+    validate_grounded_response,
+)
 from .analytics import apply_analysis
 from .excursion import (
     DURATION_TOLERANCE_SECONDS,
@@ -38,7 +48,7 @@ from .ingestion import IngestionError, clean_ftmo_csv
 from .market_data import MarketDataValidationError, parse_market_data_bytes
 from .models import TradingFile
 from .rag.corpus import build_evidence_corpus
-from .rag.retrieval import RetrievalError, retrieve_evidence
+from .rag.retrieval import RETRIEVAL_STATE_OK, RetrievalError, retrieve_evidence
 from .rag.schema import (
     DOCUMENT_TYPE_DATASET,
     DOCUMENT_TYPE_KPI,
@@ -1426,6 +1436,7 @@ def export_excel(request):
 
 
 INSPECTOR_STATE_NO_ACTIVE_JOURNAL = "NO_ACTIVE_JOURNAL"
+INSPECTOR_PASS_WORDING = "Passed deterministic grounding checks - not verified as correct"
 INSPECTOR_DOCUMENT_TYPES = (
     DOCUMENT_TYPE_TRADE,
     DOCUMENT_TYPE_KPI,
@@ -1450,65 +1461,140 @@ def _parse_inspector_top_k(raw):
         raise RetrievalError("INVALID_TOP_K") from exc
 
 
-@login_required
-@require_GET
-def retrieval_inspector(request):
-    journal = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
+def _inspector_text(mapping, name):
+    value = mapping.get(name, "")
+    return value if isinstance(value, str) else ""
+
+
+def _inspector_form_from(mapping):
+    return {
+        "form_q": _inspector_text(mapping, "q"),
+        "form_ticket": _inspector_text(mapping, "ticket"),
+        "form_symbol": _inspector_text(mapping, "symbol"),
+        "form_document_type": _inspector_text(mapping, "document_type"),
+        "form_top_k": _inspector_text(mapping, "top_k"),
+        "form_candidate_json": _inspector_text(mapping, "candidate_json"),
+    }
+
+
+def _inspector_base_context(journal, form):
     has_active_journal = journal is not None and not journal.empty
-    form_q = request.GET.get("q", "")
-    form_ticket = request.GET.get("ticket", "")
-    form_symbol = request.GET.get("symbol", "")
-    form_document_type = request.GET.get("document_type", "")
-    form_top_k = request.GET.get("top_k", "")
-    run_requested = request.GET.get("run") == "1"
     context = {
         "inspector_state": None,
         "retrieval_response": None,
         "inspector_error_code": None,
         "has_active_journal": has_active_journal,
         "journal_row_count": int(len(journal)) if has_active_journal else 0,
-        "run_requested": run_requested,
-        "form_q": form_q if isinstance(form_q, str) else "",
-        "form_ticket": form_ticket if isinstance(form_ticket, str) else "",
-        "form_symbol": form_symbol if isinstance(form_symbol, str) else "",
-        "form_document_type": (
-            form_document_type if isinstance(form_document_type, str) else ""
-        ),
-        "form_top_k": form_top_k if isinstance(form_top_k, str) else "",
         "document_type_choices": INSPECTOR_DOCUMENT_TYPES,
+        "grounding_request": None,
+        "grounding_context": None,
+        "grounding_prompt": None,
+        "grounding_error_code": None,
+        "validation_result": None,
+        "provider_connected": False,
+        "request_id_short": None,
+        "pass_wording": INSPECTOR_PASS_WORDING,
+        "grounding_request_schema_version": GROUNDING_REQUEST_SCHEMA_VERSION,
+        "grounding_response_schema_version": GROUNDING_RESPONSE_SCHEMA_VERSION,
+        "grounding_prompt_template_version": PROMPT_TEMPLATE_VERSION,
+        "grounding_task_type": TASK_TYPE,
     }
-    if not has_active_journal:
+    context.update(form)
+    return context
+
+
+def _execute_inspector_retrieval(request, journal, form):
+    scope = resolve_retrieval_scope(request.user, journal)
+    documents = build_evidence_corpus(
+        scope,
+        journal,
+        kpi_mapping=compute_kpis(journal),
+        source_filename=request.session.get("last_uploaded_file"),
+        excursion_state=_bind_dashboard_excursion_state(request, journal),
+    )
+    return retrieve_evidence(
+        documents,
+        scope,
+        query=form["form_q"],
+        ticket=_optional_inspector_value(form["form_ticket"]),
+        symbol=_optional_inspector_value(form["form_symbol"]),
+        document_type=_optional_inspector_value(form["form_document_type"]),
+        top_k=_parse_inspector_top_k(form["form_top_k"]),
+    )
+
+
+def _attach_inspector_retrieval(request, journal, form, context):
+    try:
+        response = _execute_inspector_retrieval(request, journal, form)
+    except RetrievalError as exc:
+        context["inspector_error_code"] = exc.reason
+        return context
+    except (CorpusError, RetrievalScopeError):
+        context["inspector_state"] = "CORPUS_INVALID"
+        return context
+    context["retrieval_response"] = response
+    context["inspector_state"] = response.state
+    return context
+
+
+def _attach_grounding_packet(context, question):
+    response = context.get("retrieval_response")
+    if response is None or response.state != RETRIEVAL_STATE_OK or not response.results:
+        return context
+    try:
+        grounded_request, grounded_context = build_evidence_packet(response, question)
+    except GroundingError as exc:
+        context["grounding_error_code"] = exc.code.value
+        return context
+    context["grounding_request"] = grounded_request
+    context["grounding_context"] = grounded_context
+    context["grounding_prompt"] = render_evidence_summary_prompt(grounded_request)
+    context["request_id_short"] = grounded_context.request_sha256[:12]
+    return context
+
+
+@login_required
+@require_GET
+def retrieval_inspector(request):
+    journal = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
+    form = _inspector_form_from(request.GET)
+    run_requested = request.GET.get("run") == "1"
+    context = _inspector_base_context(journal, form)
+    context["run_requested"] = run_requested
+    if not context["has_active_journal"]:
         context["inspector_state"] = INSPECTOR_STATE_NO_ACTIVE_JOURNAL
         return render(request, "performance/retrieval_inspector.html", context)
     if not run_requested:
         return render(request, "performance/retrieval_inspector.html", context)
-    try:
-        scope = resolve_retrieval_scope(request.user, journal)
-        documents = build_evidence_corpus(
-            scope,
-            journal,
-            kpi_mapping=compute_kpis(journal),
-            source_filename=request.session.get("last_uploaded_file"),
-            excursion_state=_bind_dashboard_excursion_state(request, journal),
-        )
-        response = retrieve_evidence(
-            documents,
-            scope,
-            query=context["form_q"],
-            ticket=_optional_inspector_value(context["form_ticket"]),
-            symbol=_optional_inspector_value(context["form_symbol"]),
-            document_type=_optional_inspector_value(context["form_document_type"]),
-            top_k=_parse_inspector_top_k(context["form_top_k"]),
-        )
-    except RetrievalError as exc:
-        context["inspector_error_code"] = exc.reason
-        return render(request, "performance/retrieval_inspector.html", context)
-    except (CorpusError, RetrievalScopeError):
-        context["inspector_state"] = "CORPUS_INVALID"
-        return render(request, "performance/retrieval_inspector.html", context)
-    context["retrieval_response"] = response
-    context["inspector_state"] = response.state
+    context = _attach_inspector_retrieval(request, journal, form, context)
     return render(request, "performance/retrieval_inspector.html", context)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def grounding_inspector(request):
+    journal = _read_session_df(request.session.get(CLEANED_DATA_SESSION_KEY))
+    source = request.POST if request.method == "POST" else request.GET
+    form = _inspector_form_from(source)
+    run_requested = source.get("run") == "1" or request.method == "POST"
+    context = _inspector_base_context(journal, form)
+    context["run_requested"] = run_requested
+    if not context["has_active_journal"]:
+        context["inspector_state"] = INSPECTOR_STATE_NO_ACTIVE_JOURNAL
+        return render(request, "performance/grounding_inspector.html", context)
+    if not run_requested:
+        return render(request, "performance/grounding_inspector.html", context)
+    context = _attach_inspector_retrieval(request, journal, form, context)
+    context = _attach_grounding_packet(context, form["form_q"])
+    grounded_request = context.get("grounding_request")
+    grounded_context = context.pop("grounding_context", None)
+    if request.method == "POST" and grounded_request is not None and grounded_context is not None:
+        context["validation_result"] = validate_grounded_response(
+            grounded_request,
+            grounded_context,
+            form["form_candidate_json"],
+        )
+    return render(request, "performance/grounding_inspector.html", context)
 
 
 def project_one_plan(request):

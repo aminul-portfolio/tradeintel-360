@@ -29,6 +29,7 @@ from .schema import (
     canonical_request_json,
     request_sha256,
 )
+from .validation import GroundingValidationResult, validate_grounded_response
 
 __all__ = [
     "FROZEN_LIMITATION_CODES",
@@ -45,6 +46,7 @@ __all__ = [
     "GroundedClaim",
     "GroundedEvidenceItem",
     "GroundingError",
+    "GroundingValidationResult",
     "LimitationCode",
     "ModelFacingField",
     "RejectionCode",
@@ -56,4 +58,5 @@ __all__ = [
     "prompt_template_hash",
     "render_evidence_summary_prompt",
     "request_sha256",
+    "validate_grounded_response",
 ]

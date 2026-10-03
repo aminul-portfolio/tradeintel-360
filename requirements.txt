@@ -8,3 +8,4 @@ yfinance
 Pillow
 openpyxl
 python-decouple
+anthropic==1.11.0

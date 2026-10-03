@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}Deterministic Analytical Query Inspector | TradeIntel 360{% endblock %}
+
+{% block content %}
+
+{% include "partials/page_header.html" with eyebrow="Analytical diagnostic" eyebrow_icon="bi-bar-chart" title="Deterministic Analytical Query Inspector" copy="Private authenticated view of fixed deterministic journal aggregations." %}
+
+<div class="kpi-report-layout">
+
+  <aside class="kpi-report-sidebar">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Inspector context</h2>
+      <p class="section-subcopy mb-4">
+        Deterministic means the same supported inputs and query contract
+        produce the same computation. It does not verify that the underlying
+        journal data is accurate or complete.
+      </p>
+      <p class="section-subcopy mb-4">
+        Profit uses the journal's recorded Profit column only. Commission and
+        Swap are not added.
+      </p>
+      <p class="section-subcopy mb-4">
+        Date-based queries group by the calendar date as recorded in the
+        journal. No timezone conversion is applied.
+      </p>
+      <p class="section-subcopy mb-4">
+        No LLM, external AI provider, RAG retrieval, or external network
+        request is used by this analytical workflow.
+      </p>
+
+      <div class="kpi-report-meta">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Inspector state</div>
+          <div class="kpi-report-meta__value">{{ inspector_state }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Source filename</div>
+          <div class="kpi-report-meta__value">
+            {% if source_filename %}{{ source_filename }}{% else %}Not recorded{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Source rows</div>
+          <div class="kpi-report-meta__value">
+            {% if source_row_count != None %}{{ source_row_count }}{% else %}Not available{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Filtered rows</div>
+          <div class="kpi-report-meta__value">
+            {% if filtered_row_count != None %}{{ filtered_row_count }}{% else %}Not available{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Selected query ID</div>
+          <div class="kpi-report-meta__value">
+            {% if selected_query_id %}{{ selected_query_id }}{% else %}None{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Active symbol filter</div>
+          <div class="kpi-report-meta__value">
+            {% if active_symbol_filter %}{{ active_symbol_filter }}{% else %}None{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-report-divider"></div>
+      <div class="kpi-report-actions">
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+          <i class="bi bi-speedometer2"></i>Back to Dashboard
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="kpi-report-main">
+    <div class="surface-card section-card">
+      <div class="kpi-report-card-header">
+        <div>
+          <h2 class="section-heading mb-1">Fixed query catalogue</h2>
+          <p class="section-subcopy mb-0">
+            Choose one fixed query ID. Optional Symbol filtering uses the
+            existing journal Symbol filter only.
+          </p>
+        </div>
+      </div>
+
+      <form method="get" class="app-filter-bar mb-4" action="{% url 'performance:analytical_query_inspector' %}">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <label class="form-label" for="analytical-query-id">Query</label>
+            <select id="analytical-query-id" name="query_id" class="form-control">
+              <option value="">Select a query</option>
+              {% for item_id, item_label in query_catalogue %}
+              <option value="{{ item_id }}"{% if form_query_id == item_id %} selected{% endif %}>{{ item_label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="filter-field">
+            <label class="form-label" for="analytical-symbol">Symbol filter</label>
+            <input
+              id="analytical-symbol"
+              type="text"
+              name="symbol"
+              value="{{ form_symbol }}"
+              class="form-control"
+              placeholder="Optional"
+            >
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button class="btn btn-primary" type="submit">
+            Run deterministic query
+          </button>
+        </div>
+      </form>
+    </div>
+
+    {% if inspector_state == "NO_ACTIVE_JOURNAL" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">NO_ACTIVE_JOURNAL</h2>
+      <p class="section-subcopy mb-0">{{ inspector_message }}</p>
+    </div>
+    {% elif inspector_state == "JOURNAL_INVALID" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">JOURNAL_INVALID</h2>
+      <p class="section-subcopy mb-0">{{ inspector_message }}</p>
+    </div>
+    {% elif inspector_state == "REQUEST_INVALID" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">REQUEST_INVALID</h2>
+      <p class="section-subcopy mb-0">{{ inspector_message }}</p>
+    </div>
+    {% elif inspector_state == "WORKFLOW_ERROR" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">WORKFLOW_ERROR</h2>
+      <p class="section-subcopy mb-0">{{ inspector_message }}</p>
+    </div>
+    {% elif inspector_state == "READY" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">READY</h2>
+      <p class="section-subcopy mb-0">
+        Select a query from the fixed catalogue to compute a deterministic
+        aggregation from the active journal.
+      </p>
+    </div>
+    {% elif inspector_state == "RESULT_AVAILABLE" and analytical_result %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">Analytical result</h2>
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Analytical status</div>
+          <div class="kpi-report-meta__value">{{ analytical_result.status }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Result kind</div>
+          <div class="kpi-report-meta__value">
+            {% if analytical_result.result_kind %}{{ analytical_result.result_kind }}{% else %}None{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Tie</div>
+          <div class="kpi-report-meta__value">{{ analytical_result.tie }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Grouping basis</div>
+          <div class="kpi-report-meta__value">
+            {% if analytical_result.grouping_basis %}{{ analytical_result.grouping_basis }}{% else %}None{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Date column</div>
+          <div class="kpi-report-meta__value">
+            {% if analytical_result.date_column %}{{ analytical_result.date_column }}{% else %}None{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Date offset</div>
+          <div class="kpi-report-meta__value">
+            {% if analytical_result.date_offset %}{{ analytical_result.date_offset }}{% else %}None{% endif %}
+          </div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Engine contract version</div>
+          <div class="kpi-report-meta__value">{{ analytical_result.provenance.engine_contract_version }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Input hash</div>
+          <div class="kpi-report-meta__value">
+            {% if input_hash_short %}{{ input_hash_short }}{% else %}None{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if analytical_result.status.value == "OK" and analytical_result.result_kind.value == "SCALAR" %}
+      <p class="section-subcopy mb-2">Scalar value: {{ analytical_result.scalar }}</p>
+      {% for unit_name, unit_label in analytical_result.units %}
+      <p class="section-subcopy mb-2">{{ unit_name }}: {{ unit_label }}</p>
+      {% endfor %}
+      {% elif analytical_result.status.value == "OK" and analytical_result.result_kind %}
+      {% if analytical_result.tie %}
+      <p class="section-subcopy mb-3">All rows tied for the maximum count are shown.</p>
+      {% endif %}
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              {% for column in analytical_result.columns %}
+              <th>{{ column }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in analytical_result.rows %}
+            <tr>
+              {% for cell in row %}
+              <td>{{ cell }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% for unit_name, unit_label in analytical_result.units %}
+      <p class="section-subcopy mb-2">{{ unit_name }}: {{ unit_label }}</p>
+      {% endfor %}
+      {% else %}
+      <p class="section-subcopy mb-2">{{ status_explanation }}</p>
+      {% if analytical_result.issues %}
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>reason_code</th>
+              <th>column</th>
+              <th>row_count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for issue in analytical_result.issues %}
+            <tr>
+              <td>{{ issue.reason_code }}</td>
+              <td>{{ issue.column }}</td>
+              <td>{{ issue.row_count }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% endif %}
+
+      {% if warning_display %}
+      <div class="mt-4">
+        <h3 class="section-heading mb-2">Warnings</h3>
+        {% for item in warning_display %}
+        <p class="section-subcopy mb-2">
+          {{ item.code }}
+          {% if item.explanation %} - {{ item.explanation }}{% endif %}
+          {% if item.count != None %} Count: {{ item.count }}{% endif %}
+        </p>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

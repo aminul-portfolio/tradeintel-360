@@ -1,7 +1,7 @@
 # performance/urls.py
 from django.urls import path
 
-from . import provider_inspector, views
+from . import analytical_query_inspector, provider_inspector, views
 
 app_name = "performance"
 
@@ -29,6 +29,11 @@ urlpatterns = [
         "provider-grounding-inspector/",
         provider_inspector.provider_grounding_inspector,
         name="provider_grounding_inspector",
+    ),
+    path(
+        "analytical-query-inspector/",
+        analytical_query_inspector.analytical_query_inspector,
+        name="analytical_query_inspector",
     ),
     path("project-plan/", views.project_one_plan, name="project_one_plan"),
 

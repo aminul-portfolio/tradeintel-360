@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Provider Grounding Inspector | TradeIntel 360{% endblock %}
+
+{% block content %}
+
+{% include "partials/page_header.html" with eyebrow="Diagnostic surface" eyebrow_icon="bi-shield-exclamation" title="Provider Grounding Inspector" copy="Private operator diagnostic surface. Human review is required. Output is not verified." %}
+
+<div class="kpi-report-layout">
+
+  <aside class="kpi-report-sidebar">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Provider disclosure</h2>
+      <p class="section-subcopy mb-3">
+        This page sends the prompt shown below to an external AI provider (Anthropic, model {{ model_id }}).
+      </p>
+      <p class="section-subcopy mb-3">
+        Only synthetic, version-controlled evidence is used. No data from your trading journal is sent.
+      </p>
+      <p class="section-subcopy mb-4">
+        Exactly one request is made per confirmation. There are no automatic retries.
+      </p>
+      <p class="section-subcopy mb-4">
+        A completed request does not mean the output is accurate, factual, hallucination-free, approved, or safe for autonomous action.
+      </p>
+
+      <div class="kpi-report-meta">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider</div>
+          <div class="kpi-report-meta__value">{{ provider_name }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Model</div>
+          <div class="kpi-report-meta__value">{{ model_id }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Question id</div>
+          <div class="kpi-report-meta__value">{{ question_id }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Inspector state</div>
+          <div class="kpi-report-meta__value">{{ inspector_state }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Review required</div>
+          <div class="kpi-report-meta__value">{{ review_required }}</div>
+        </div>
+      </div>
+
+      <div class="kpi-report-divider"></div>
+      <div class="kpi-report-actions">
+        <a href="{% url 'performance:dashboard' %}" class="btn btn-soft">
+          <i class="bi bi-speedometer2"></i>Back to Dashboard
+        </a>
+        <a href="{% url 'performance:grounding_inspector' %}" class="btn btn-soft">
+          <i class="bi bi-shield-check"></i>Grounding Inspector
+        </a>
+      </div>
+    </div>
+  </aside>
+
+  <div class="kpi-report-main">
+    {% if inspector_state == "PROVIDER_NOT_ENABLED" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">External provider not enabled</h2>
+      <p class="section-subcopy mb-0">
+        Live provider use is not enabled. No approval was issued and no external request was made.
+      </p>
+    </div>
+    {% elif inspector_state == "PREVIEW_READY" %}
+    <div class="surface-card section-card">
+      <div class="kpi-report-card-header">
+        <div>
+          <h2 class="section-heading mb-1">Synthetic prompt preview</h2>
+          <p class="section-subcopy mb-0">
+            Confirm the exact server-built prompt before sending. The prompt is not verified output and is not a recommendation.
+          </p>
+        </div>
+        <span class="signal-badge">
+          <i class="bi bi-shield-exclamation"></i>One-shot confirmation
+        </span>
+      </div>
+
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Prompt hash</div>
+          <div class="kpi-report-meta__value">{{ prompt_sha256_short }}</div>
+        </div>
+      </div>
+
+      <pre class="form-control mb-4">{{ preview_prompt }}</pre>
+
+      <form method="post" action="{% url 'performance:provider_grounding_inspector' %}">
+        {% csrf_token %}
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <input type="hidden" name="question_id" value="{{ question_id }}">
+        <div class="mb-3">
+          <label class="form-label" for="confirm-send">
+            <input type="checkbox" name="confirm_send" value="1" id="confirm-send">
+            I confirm I want to send this exact prompt to Anthropic.
+          </label>
+        </div>
+        <button class="btn btn-primary" type="submit">Send once to provider</button>
+      </form>
+    </div>
+    {% elif inspector_state == "WORKFLOW_EXCEPTION" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">Provider workflow could not complete</h2>
+      <p class="section-subcopy mb-3">
+        The provider workflow could not complete. No diagnostic exception details are displayed.
+      </p>
+      <p class="section-subcopy mb-0">Human review required.</p>
+    </div>
+    {% elif result_display and result_display.outcome == "PASSED_DETERMINISTIC_CHECKS" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">PASSED_DETERMINISTIC_CHECKS</h2>
+      <p class="section-subcopy mb-3">
+        Passed deterministic grounding checks - not verified as correct.
+        This does not mean the output is accurate, factual or safe.
+      </p>
+      <p class="section-subcopy mb-3">Human review required.</p>
+      {% if result_display.show_provider_metadata %}
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider name</div>
+          <div class="kpi-report-meta__value">{{ result_display.provider_name }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Requested model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_requested }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Reported model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_reported }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported input tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.input_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported output tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.output_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Duration ms</div>
+          <div class="kpi-report-meta__value">{{ result_display.duration_ms }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Stop category</div>
+          <div class="kpi-report-meta__value">{{ result_display.stop_category }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Prompt hash</div>
+          <div class="kpi-report-meta__value">{{ result_display.prompt_sha256_short }}</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if result_display.show_validator %}
+      <p class="section-subcopy mb-2">Validation status {{ result_display.validation_status }}</p>
+      {% endif %}
+      {% if result_display.show_raw_output %}
+      <p class="section-subcopy mb-2">Untrusted model output - not verified.</p>
+      <pre class="form-control mb-0">{{ result_display.raw_output }}</pre>
+      {% endif %}
+    </div>
+    {% elif result_display and result_display.outcome == "VALIDATION_REJECTED" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">VALIDATION_REJECTED</h2>
+      <p class="section-subcopy mb-3">
+        The provider responded; the deterministic validator rejected the response.
+      </p>
+      <p class="section-subcopy mb-3">Human review required.</p>
+      {% if result_display.show_validator %}
+      <p class="section-subcopy mb-2">Validation status {{ result_display.validation_status }}</p>
+      <p class="section-subcopy mb-3">Rejection codes {{ result_display.rejection_codes }}</p>
+      {% endif %}
+      {% if result_display.show_provider_metadata %}
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider name</div>
+          <div class="kpi-report-meta__value">{{ result_display.provider_name }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Requested model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_requested }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Reported model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_reported }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported input tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.input_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported output tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.output_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Duration ms</div>
+          <div class="kpi-report-meta__value">{{ result_display.duration_ms }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Stop category</div>
+          <div class="kpi-report-meta__value">{{ result_display.stop_category }}</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if result_display.show_raw_output %}
+      <p class="section-subcopy mb-2">Untrusted model output - not verified.</p>
+      <pre class="form-control mb-0">{{ result_display.raw_output }}</pre>
+      {% endif %}
+    </div>
+    {% elif result_display and result_display.outcome == "PROVIDER_FAILED" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">PROVIDER_FAILED</h2>
+      <p class="section-subcopy mb-3">
+        The provider request did not complete ({{ result_display.provider_failure_category }}).
+        Integration was not proven for this attempt.
+      </p>
+      <p class="section-subcopy mb-0">Human review required.</p>
+    </div>
+    {% elif result_display and result_display.outcome == "NOT_ATTEMPTED_PACKET_ERROR" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">NOT_ATTEMPTED_PACKET_ERROR</h2>
+      <p class="section-subcopy mb-3">Packet error code {{ result_display.packet_error_code }}</p>
+      <p class="section-subcopy mb-3">Provider call not attempted. Validator not run.</p>
+      <p class="section-subcopy mb-0">Human review required.</p>
+    </div>
+    {% else %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">Request not sent</h2>
+      <p class="section-subcopy mb-0">
+        The confirmation was refused ({{ inspector_state }}). No additional provider request was made. Human review is required.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

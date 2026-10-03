@@ -1,5 +1,7 @@
 # TradeIntel 360
 
+A Django post-trade analytics application with a deterministic analytics core and a controlled, evaluated boundary for evidence-grounded LLM output.
+
 **Post-trade performance analytics with deterministic CSV/XLSX ingestion, an 18-metric KPI engine, shared request-derived analytical scope, and session-backed reporting/export surfaces.**
 
 Upload a trade history CSV or Excel file. TradeIntel 360 cleans it, stores the cleaned dataset in session, applies a shared request-derived analytical scope, and surfaces the results across the Dashboard, KPI Report, configurable Excel export, and a separate PDF report. The review workflow runs from a single uploaded file and is designed to minimise manual preparation before analysis.
@@ -37,6 +39,12 @@ Upload a trade history CSV or Excel file. TradeIntel 360 cleans it, stores the c
 | **Data visualisation** | Plotly equity curve, P&L distribution, monthly breakdown, segmented win/loss charts |
 | **Export pipeline** | Configurable Excel export with shared analytical scope, export-only min_rr refinement, Source / Analysed / Exported row lineage, optional KPI sheet, and ExportMeta; cleaned CSV of the full session dataset; PDF via xhtml2pdf |
 | **FinTech domain** | Trade-level data structures, performance metrics, analyst-facing workflow presentation |
+| **Deterministic analytics** | Fixed-catalogue analytical queries over the current session journal; recorded Profit only; recorded calendar-date grouping |
+| **Evidence retrieval** | Deterministic TF-IDF retrieval and provenance inspection on the authenticated journal |
+| **Grounding / validation** | Deterministic evidence-packet contract and validator for manually supplied candidate responses |
+| **Offline AI evaluation** | Offline adversarial corpus and harness with expected-pass, expected-reject, known-limitation, and kill-matrix evidence |
+| **Controlled provider boundary** | Staff-gated provider-backed grounding path; recorded Sprint 8 and Sprint 9 live responses were rejected as SCHEMA_INVALID_JSON |
+| **Django reviewer experience** | Authenticated Engineering Evidence index linking existing inspector surfaces |
 
 ---
 
@@ -292,6 +300,61 @@ The optional KPI worksheet is based on the shared analytical scope before Min R/
 
 ---
 
+## Engineering evidence
+
+Authenticated reviewers can open `/performance/engineering-evidence/`. That page is a reviewer-facing index of existing engineering surfaces. It is not a public demo and is not available to anonymous visitors. Opening Engineering Evidence does not invoke an LLM, RAG retrieval, or an external provider.
+
+The controlled Provider Grounding Inspector link on that page is staff-only.
+
+### Deterministic Analytical Query Inspector
+
+Fixed analytical query catalogue. Deterministic local computation over the current authenticated session journal. There is no natural-language query interpretation and no LLM-based analytical routing.
+
+These queries use the journal's recorded Profit column only. Commission and Swap are not added. That is not account-level net P&L.
+
+Date-based queries group by the recorded journal calendar date. No timezone conversion is applied. That grouping is not a trader-local day.
+
+This inspector does not use an LLM, RAG retrieval, or an external provider/network path.
+
+### Retrieval Inspector
+
+Deterministic TF-IDF retrieval over the authenticated journal, with provenance/evidence inspection. No external provider is invoked.
+
+This is not vector search, a vector database, embedding retrieval, or semantic vector retrieval.
+
+### Grounding Inspector
+
+Deterministic evidence-packet / grounding contract. A candidate response is supplied manually and checked by deterministic validation. Human review remains required. This manual workflow does not invoke a provider.
+
+Passing deterministic checks does not establish factual correctness.
+
+### Offline adversarial evaluation
+
+Sprint 7 added an offline, deterministic adversarial evaluation corpus and harness. It covers expected-pass cases, expected-reject cases, documented known limitations, and mutation / kill-matrix / differential-style evidence.
+
+Offline evaluation does not establish complete AI safety.
+
+### Controlled external provider boundary
+
+A separate, staff-gated path can send a controlled synthetic grounding request to an external LLM provider. This is not the same as the deterministic inspectors above.
+
+Two controlled synthetic live provider invocations were executed across Sprint 8 and Sprint 9. In both cases the external provider returned a response, the response reached the deterministic trust boundary, and deterministic validation rejected the output. The recorded outcome was VALIDATION_REJECTED with rejection code SCHEMA_INVALID_JSON.
+
+No recorded Sprint 8 or Sprint 9 live provider output passed deterministic validation.
+
+That evidence shows provider transport/integration reached the validation boundary and that invalid provider output was not accepted. It does not prove accepted live-model output quality, factual correctness, hallucination-free output, production readiness, or autonomous AI capability.
+
+### Claim boundaries
+
+- **Deterministic checks vs factual correctness.** Deterministic means reproducible computation/checking for the same supported inputs. It does not mean source journal data or model output is independently fact-checked or guaranteed correct.
+- **Provider integration vs accepted provider output.** The provider boundary has been exercised with controlled synthetic live calls. The recorded Sprint 8 and Sprint 9 responses were rejected by deterministic validation.
+- **Recorded Profit vs net P&L.** Deterministic analytical-query calculations use recorded Profit and exclude Commission and Swap.
+- **Recorded calendar date vs trader-local day.** Deterministic analytical-query grouping uses the recorded journal calendar date with no timezone conversion.
+- **TF-IDF retrieval vs vector / semantic retrieval.** Current retrieval evidence is deterministic TF-IDF.
+- **Fixed analytical catalogue vs natural-language analytics.** The analytical query layer uses a fixed catalogue. It does not interpret free-form analytical questions.
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
@@ -338,6 +401,7 @@ Visit `http://127.0.0.1:8000`, log in, and upload a trade history file to begin.
 - [ ] Apply Min R/R and confirm Analysed Rows and Exported Rows can differ
 - [ ] Optionally include the KPI sheet and confirm it reflects the shared analytical scope
 - [ ] Generate the PDF report separately
+- [ ] After login, open Engineering Evidence and review the deterministic inspector surfaces
 
 ---
 
@@ -351,6 +415,18 @@ TradeIntel 360 is the **post-trade performance analytics and review** product in
 | MarketVista Dashboard | Market monitoring and analyst visibility |
 | RiskWise Planner | Pre-trade risk planning and scenario modelling |
 | **TradeIntel 360** | **Post-trade performance analytics and review** |
+
+---
+
+## Not implemented
+
+The following are not current features:
+
+- a prompt strategy that has produced schema-conforming accepted live-model output
+- timezone-converted analytical grouping
+- net P&L that includes Commission, Swap, or other trading costs in the analytical-query layer
+- natural-language analytical-query interpretation
+- broader provider-backed journal use beyond the controlled synthetic inspector path
 
 ---
 

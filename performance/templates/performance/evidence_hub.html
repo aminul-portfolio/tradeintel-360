@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}Engineering Evidence | TradeIntel 360{% endblock %}
+
+{% block content %}
+
+{% include "partials/page_header.html" with eyebrow="Reviewer surface" eyebrow_icon="bi-clipboard-data" title="Engineering Evidence" copy="What each engineering surface demonstrates and what it does not." %}
+
+<div class="kpi-report-layout">
+
+  <aside class="kpi-report-sidebar">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-3">Claim boundary</h2>
+      <p class="section-subcopy mb-4">
+        Deterministic means reproducible computation and deterministic checks.
+        It does not establish that source journal data or model output is factually
+        correct. Provider output remains subject to human review.
+      </p>
+      <p class="section-subcopy mb-0">
+        Passing deterministic checks does not mean the output is factually verified
+        or correct.
+      </p>
+    </div>
+  </aside>
+
+  <div class="kpi-report-main">
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-2">Deterministic / no external provider</h2>
+      <p class="section-subcopy mb-4">
+        These surfaces use fixed local workflows. They do not invoke an LLM,
+        external provider, or RAG retrieval over the network.
+      </p>
+
+      <h3 class="section-heading mb-2">Deterministic Analytical Query Inspector</h3>
+      <p class="section-subcopy mb-2">
+        Fixed analytical query catalogue. Deterministic computation over the
+        current authenticated journal. Profit is the recorded Profit column only;
+        Commission and Swap are excluded. Date grouping uses the recorded calendar
+        date; no timezone conversion is applied. No LLM, provider, RAG retrieval,
+        or external network call.
+      </p>
+      <p class="section-subcopy mb-4">
+        <a href="{% url 'performance:analytical_query_inspector' %}">Open Deterministic Analytical Query Inspector</a>
+      </p>
+
+      <h3 class="section-heading mb-2">Retrieval Inspector</h3>
+      <p class="section-subcopy mb-2">
+        Deterministic TF-IDF retrieval and evidence/provenance inspection for the
+        authenticated journal-scoped workflow. No external provider invocation.
+        This is not vector search.
+      </p>
+      <p class="section-subcopy mb-4">
+        <a href="{% url 'performance:retrieval_inspector' %}">Open Retrieval Inspector</a>
+      </p>
+
+      <h3 class="section-heading mb-2">Grounding Inspector</h3>
+      <p class="section-subcopy mb-2">
+        Deterministic evidence-grounding contract. A candidate response is supplied
+        manually and checked by deterministic validation. This manual workflow
+        does not make an LLM or provider call. Passing deterministic checks does
+        not mean the candidate is factually verified or correct.
+      </p>
+      <p class="section-subcopy mb-0">
+        <a href="{% url 'performance:grounding_inspector' %}">Open Grounding Inspector</a>
+      </p>
+    </div>
+
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-2">Offline evaluation</h2>
+      <p class="section-subcopy mb-0">
+        Sprint 7 added an offline adversarial evaluation corpus and evaluation
+        harness. It covers expected-pass, expected-reject, and documented
+        known-limitation behaviour, plus mutation and kill-matrix evidence.
+        There is no interactive route for that harness on this page.
+      </p>
+    </div>
+
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-2">Controlled external provider</h2>
+      <p class="section-subcopy mb-3">
+        This section is separate from the deterministic surfaces above.
+        It describes a controlled, staff-gated inspector. Opening this Evidence
+        page does not send a provider request.
+      </p>
+      <h3 class="section-heading mb-2">Provider Grounding Inspector</h3>
+      <p class="section-subcopy mb-3">
+        Staff-only controlled inspector for the existing provider-backed grounding
+        workflow. Two controlled synthetic live canaries were executed in the
+        closed Sprint 8-9 work. Both provider responses were rejected by the
+        deterministic validator with SCHEMA_INVALID_JSON. That demonstrates the
+        trust boundary rejecting invalid output. It does not demonstrate
+        model-output quality or accepted output.
+      </p>
+      {% if user.is_staff %}
+      <p class="section-subcopy mb-0">
+        <a href="{% url 'performance:provider_grounding_inspector' %}">
+          Open inspector (staff only; opening the page does not send a provider request)
+        </a>
+      </p>
+      {% else %}
+      <p class="section-subcopy mb-0">Staff only</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

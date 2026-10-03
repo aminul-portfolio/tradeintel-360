@@ -70,6 +70,15 @@
             </a>
           </li>
 
+          {% if user.is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link {% if app == 'performance' and name == 'engineering_evidence' %}active{% endif %}"
+               href="{% url 'performance:engineering_evidence' %}">
+              <i class="bi bi-clipboard-data"></i>Engineering Evidence
+            </a>
+          </li>
+          {% endif %}
+
           <!-- Exports dropdown -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle {% if app == 'performance' and name in 'export_excel,download_pdf,download_cleaned_csv,download_excel' %}active{% endif %}"

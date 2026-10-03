@@ -125,7 +125,6 @@ STATIC_URL = '/static/'
 # Optional: If you’re using custom static directories
 STATICFILES_DIRS = [
     BASE_DIR / "core" / "static",  # Adjust to match your app name if needed
-    BASE_DIR / 'performance' / 'static',
 ]
 
 MEDIA_URL = '/media/'

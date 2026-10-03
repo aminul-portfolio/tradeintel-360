@@ -103,15 +103,129 @@
         <button class="btn btn-primary" type="submit">Send once to provider</button>
       </form>
     </div>
-    {% elif inspector_state == "REQUEST_COMPLETED" %}
+    {% elif inspector_state == "WORKFLOW_EXCEPTION" %}
     <div class="surface-card section-card">
-      <h2 class="section-heading mb-1">Provider request completed</h2>
+      <h2 class="section-heading mb-1">Provider workflow could not complete</h2>
       <p class="section-subcopy mb-3">
-        One confirmation produced one provider request. The result is not verified and does not mean the output is accurate.
+        The provider workflow could not complete. No diagnostic exception details are displayed.
       </p>
-      <p class="section-subcopy mb-0">
-        Outcome {{ outcome }} still requires human review. Detailed result presentation is not part of this page yet.
+      <p class="section-subcopy mb-0">Human review required.</p>
+    </div>
+    {% elif result_display and result_display.outcome == "PASSED_DETERMINISTIC_CHECKS" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">PASSED_DETERMINISTIC_CHECKS</h2>
+      <p class="section-subcopy mb-3">
+        Passed deterministic grounding checks - not verified as correct.
+        This does not mean the output is accurate, factual or safe.
       </p>
+      <p class="section-subcopy mb-3">Human review required.</p>
+      {% if result_display.show_provider_metadata %}
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider name</div>
+          <div class="kpi-report-meta__value">{{ result_display.provider_name }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Requested model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_requested }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Reported model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_reported }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported input tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.input_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported output tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.output_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Duration ms</div>
+          <div class="kpi-report-meta__value">{{ result_display.duration_ms }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Stop category</div>
+          <div class="kpi-report-meta__value">{{ result_display.stop_category }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Prompt hash</div>
+          <div class="kpi-report-meta__value">{{ result_display.prompt_sha256_short }}</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if result_display.show_validator %}
+      <p class="section-subcopy mb-2">Validation status {{ result_display.validation_status }}</p>
+      {% endif %}
+      {% if result_display.show_raw_output %}
+      <p class="section-subcopy mb-2">Untrusted model output - not verified.</p>
+      <pre class="form-control mb-0">{{ result_display.raw_output }}</pre>
+      {% endif %}
+    </div>
+    {% elif result_display and result_display.outcome == "VALIDATION_REJECTED" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">VALIDATION_REJECTED</h2>
+      <p class="section-subcopy mb-3">
+        The provider responded; the deterministic validator rejected the response.
+      </p>
+      <p class="section-subcopy mb-3">Human review required.</p>
+      {% if result_display.show_validator %}
+      <p class="section-subcopy mb-2">Validation status {{ result_display.validation_status }}</p>
+      <p class="section-subcopy mb-3">Rejection codes {{ result_display.rejection_codes }}</p>
+      {% endif %}
+      {% if result_display.show_provider_metadata %}
+      <div class="kpi-report-meta mb-4">
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider name</div>
+          <div class="kpi-report-meta__value">{{ result_display.provider_name }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Requested model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_requested }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Reported model</div>
+          <div class="kpi-report-meta__value">{{ result_display.model_id_reported }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported input tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.input_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Provider-reported output tokens</div>
+          <div class="kpi-report-meta__value">{{ result_display.output_tokens }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Duration ms</div>
+          <div class="kpi-report-meta__value">{{ result_display.duration_ms }}</div>
+        </div>
+        <div class="kpi-report-meta__item">
+          <div class="app-kpi-label">Stop category</div>
+          <div class="kpi-report-meta__value">{{ result_display.stop_category }}</div>
+        </div>
+      </div>
+      {% endif %}
+      {% if result_display.show_raw_output %}
+      <p class="section-subcopy mb-2">Untrusted model output - not verified.</p>
+      <pre class="form-control mb-0">{{ result_display.raw_output }}</pre>
+      {% endif %}
+    </div>
+    {% elif result_display and result_display.outcome == "PROVIDER_FAILED" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">PROVIDER_FAILED</h2>
+      <p class="section-subcopy mb-3">
+        The provider request did not complete ({{ result_display.provider_failure_category }}).
+        Integration was not proven for this attempt.
+      </p>
+      <p class="section-subcopy mb-0">Human review required.</p>
+    </div>
+    {% elif result_display and result_display.outcome == "NOT_ATTEMPTED_PACKET_ERROR" %}
+    <div class="surface-card section-card">
+      <h2 class="section-heading mb-1">NOT_ATTEMPTED_PACKET_ERROR</h2>
+      <p class="section-subcopy mb-3">Packet error code {{ result_display.packet_error_code }}</p>
+      <p class="section-subcopy mb-3">Provider call not attempted. Validator not run.</p>
+      <p class="section-subcopy mb-0">Human review required.</p>
     </div>
     {% else %}
     <div class="surface-card section-card">

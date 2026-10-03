@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,11 @@ from django.views.decorators.http import require_http_methods
 
 from performance.ai_grounding import build_evidence_packet, prompt_hash, render_evidence_summary_prompt
 from performance.ai_orchestration.canary_fixture import CANARY_QUESTION, load_canary_retrieval
-from performance.ai_orchestration.grounded import generate_grounded_response
+from performance.ai_orchestration.grounded import (
+    GroundedGenerationOutcome,
+    GroundedGenerationResult,
+    generate_grounded_response,
+)
 from performance.ai_provider import MODEL_ID, PROVIDER_NAME, ProviderFailure, ProviderFailureCode
 from performance.ai_provider.config import ENABLED_ENV, ENABLED_VALUE
 
@@ -37,6 +42,35 @@ STATE_QUESTION_REFUSED = "QUESTION_REFUSED"
 STATE_PROMPT_BINDING_MISMATCH = "PROMPT_BINDING_MISMATCH"
 STATE_PROVIDER_NOT_CONFIGURED = "PROVIDER_NOT_CONFIGURED"
 STATE_REQUEST_COMPLETED = "REQUEST_COMPLETED"
+STATE_WORKFLOW_EXCEPTION = "WORKFLOW_EXCEPTION"
+
+OUTCOME_PACKET_ERROR = GroundedGenerationOutcome.NOT_ATTEMPTED_PACKET_ERROR.value
+OUTCOME_PROVIDER_FAILED = GroundedGenerationOutcome.PROVIDER_FAILED.value
+OUTCOME_VALIDATION_REJECTED = GroundedGenerationOutcome.VALIDATION_REJECTED.value
+OUTCOME_PASSED = GroundedGenerationOutcome.PASSED_DETERMINISTIC_CHECKS.value
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderInspectorResultDisplay:
+    outcome: str
+    review_required: bool
+    validation_status: str
+    rejection_codes: str
+    packet_error_code: str
+    provider_failure_category: str
+    provider_name: str
+    model_id_requested: str
+    model_id_reported: str
+    stop_category: str
+    input_tokens: str
+    output_tokens: str
+    duration_ms: str
+    prompt_sha256_short: str
+    raw_output: str
+    transport_response_received: bool
+    show_raw_output: bool
+    show_validator: bool
+    show_provider_metadata: bool
 
 
 def detect_test_runner(argv: list[str] | None = None) -> bool:
@@ -93,6 +127,80 @@ def build_server_owned_prompt(question_id: str) -> tuple[str, str] | None:
     return rendered, prompt_hash(rendered)
 
 
+def _short_hash(value: object) -> str:
+    if isinstance(value, str) and value:
+        return value[:12]
+    return ""
+
+
+def _optional_int_text(value: object) -> str:
+    return str(value) if isinstance(value, int) and not isinstance(value, bool) else ""
+
+
+def build_result_display_from_failure(
+    failure: ProviderFailure,
+    prompt_sha256: str,
+) -> ProviderInspectorResultDisplay:
+    return ProviderInspectorResultDisplay(
+        outcome=OUTCOME_PROVIDER_FAILED,
+        review_required=True,
+        validation_status="",
+        rejection_codes="",
+        packet_error_code="",
+        provider_failure_category=failure.category.value,
+        provider_name="",
+        model_id_requested="",
+        model_id_reported="",
+        stop_category="",
+        input_tokens="",
+        output_tokens="",
+        duration_ms="",
+        prompt_sha256_short=_short_hash(prompt_sha256),
+        raw_output="",
+        transport_response_received=False,
+        show_raw_output=False,
+        show_validator=False,
+        show_provider_metadata=False,
+    )
+
+
+def build_result_display(result: GroundedGenerationResult) -> ProviderInspectorResultDisplay:
+    outcome = result.outcome.value
+    validation = result.validation_result
+    failure = result.provider_failure
+    meta = result.provider_response_meta
+    raw = result.raw_candidate if isinstance(result.raw_candidate, str) else ""
+    transport = meta is not None
+    show_raw = outcome in {OUTCOME_PASSED, OUTCOME_VALIDATION_REJECTED} and bool(raw)
+    show_validator = outcome in {OUTCOME_PASSED, OUTCOME_VALIDATION_REJECTED} and validation is not None
+    show_meta = transport and outcome in {OUTCOME_PASSED, OUTCOME_VALIDATION_REJECTED}
+    return ProviderInspectorResultDisplay(
+        outcome=outcome,
+        review_required=True,
+        validation_status="" if validation is None else validation.status.value,
+        rejection_codes=""
+        if validation is None
+        else ",".join(code.value for code in validation.rejection_codes),
+        packet_error_code="" if result.packet_error_code is None else result.packet_error_code.value,
+        provider_failure_category="" if failure is None else failure.category.value,
+        provider_name="" if meta is None or not show_meta else meta.provider_name,
+        model_id_requested="" if meta is None or not show_meta else meta.model_id_requested,
+        model_id_reported=""
+        if meta is None or not show_meta or meta.model_id_reported is None
+        else meta.model_id_reported,
+        stop_category="" if meta is None or not show_meta else meta.stop_category.value,
+        input_tokens="" if meta is None or not show_meta else _optional_int_text(meta.input_tokens),
+        output_tokens="" if meta is None or not show_meta else _optional_int_text(meta.output_tokens),
+        duration_ms="" if meta is None or not show_meta else str(meta.duration_ms),
+        prompt_sha256_short=_short_hash(result.prompt_sha256),
+        raw_output=raw if show_raw else "",
+        transport_response_received=transport,
+        show_raw_output=show_raw,
+        show_validator=show_validator,
+        show_provider_metadata=show_meta,
+    )
+
+
 def _parse_issued_at(value: object) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -127,6 +235,7 @@ def _base_context() -> dict[str, object]:
         "nonce": "",
         "outcome": "",
         "review_required": True,
+        "result_display": None,
     }
 
 
@@ -172,6 +281,24 @@ def _refuse(request: HttpRequest, context: dict[str, object], state: str) -> Htt
     return render(request, TEMPLATE_NAME, context)
 
 
+def _render_result(
+    request: HttpRequest,
+    context: dict[str, object],
+    display: ProviderInspectorResultDisplay,
+) -> HttpResponse:
+    context.update(
+        {
+            "provider_enabled": True,
+            "inspector_state": STATE_REQUEST_COMPLETED,
+            "outcome": display.outcome,
+            "review_required": True,
+            "result_display": display,
+            "prompt_sha256_short": display.prompt_sha256_short,
+        }
+    )
+    return render(request, TEMPLATE_NAME, context)
+
+
 def _handle_post(request: HttpRequest, context: dict[str, object]) -> HttpResponse:
     if not provider_enabled():
         return _refuse(request, context, STATE_PROVIDER_NOT_ENABLED)
@@ -202,23 +329,22 @@ def _handle_post(request: HttpRequest, context: dict[str, object]) -> HttpRespon
     _prompt, prompt_sha256 = rebuilt
     if prompt_sha256 != approval.get("prompt_sha256"):
         return _refuse(request, context, STATE_PROMPT_BINDING_MISMATCH)
-    provider = get_provider()
-    if isinstance(provider, ProviderFailure):
-        return _refuse(request, context, STATE_PROVIDER_NOT_CONFIGURED)
-    result = generate_grounded_response(
-        load_canary_retrieval(),
-        SPRINT9_PRESET_QUESTION,
-        provider,
-    )
-    context.update(
-        {
-            "provider_enabled": True,
-            "inspector_state": STATE_REQUEST_COMPLETED,
-            "outcome": result.outcome.value,
-            "review_required": result.review_required,
-        }
-    )
-    return render(request, TEMPLATE_NAME, context)
+    try:
+        provider = get_provider()
+        if isinstance(provider, ProviderFailure):
+            return _render_result(
+                request,
+                context,
+                build_result_display_from_failure(provider, prompt_sha256),
+            )
+        result = generate_grounded_response(
+            load_canary_retrieval(),
+            SPRINT9_PRESET_QUESTION,
+            provider,
+        )
+        return _render_result(request, context, build_result_display(result))
+    except Exception:
+        return _refuse(request, context, STATE_WORKFLOW_EXCEPTION)
 
 
 @login_required
